@@ -1,0 +1,1176 @@
+---
+title: "Cars Partie 2"
+author: "Jean Clark, Lilian Boissé et Théo De Sa Morais"
+output:
+  pdf_document:
+    df_print: kable
+    highlight: kate
+    number_sections: yes
+    toc: yes
+  html_document:
+    df_print: paged
+    toc: yes
+  prettydoc::html_pretty:
+    highlight: github
+    theme: cayman
+---
+
+\newpage
+
+# Bon ou mauvais achat?
+
+Au premier semestre nous avions étudié cette base de données, cars, et avions observé que la première variable de celle-ci donnait l'information sur la qualité de l'achat; si c'est un bon ou mauvais achat. Il serait intéressant dans une approche du point de vue d'un acheteur d'avoir une idée précise des caractéristiques d'un bon achat et de produire un modèle prédictif qui permettrait de correctement prédire les bons achats.
+
+##  Les données
+
+Afin d'avoir une idée des facteurs qui différencient les véhicules qui sont des mauvais achats ou non, il convient d'avoir une idée des différences entre les deux groupes(mauvais achats/bons achats) et les potentielles variables qui les différencient le plus.  
+
+```{r,echo=FALSE}
+library(knitr)
+knitr::opts_chunk$set(echo=FALSE,warning=F,message=F,fig.align= "center",fig.height= 4, fig.width= 8.5)
+```
+
+### Les qualitatives
+
+
+
+```{r,echo=FALSE,include=FALSE}
+df<-read.csv(file ="cars.csv",header = TRUE, sep= ",",na.strings = c("NULL","","NOT AVAIL"))
+df<-df[,-c(1,5,13,27,28,30)]
+names(df)<-(c("Is_Bad","Date_d_achat",	"Encheres"
+,"Age_du_vehicule","Fabrication","Modele","Trim","Sous_Marque","Couleur","Type_de_transmission","Type_de_roues","Kilometrage","Nationalite","Taille","Top_trois_cons_Americains","CVh_M_E_1",	"CVh_B_E_1",	"CVh_M_D_1",	"CVh_B_D_1"	,"CVh_M_E_2",	"CVh_B_E_2",	"CVh_M_D_2",	"CVh_B_D_2",	"Numero_de_l_acheteur",	"Etat",	"Ct_vhcl_au_momt_de_l_achat",	"Est_une_vente_en_ligne",	"Cout_de_la_garantie"))
+df$Est_une_vente_en_ligne<-as.factor(df$Est_une_vente_en_ligne)
+df$Is_Bad<-as.factor(df$Is_Bad)
+levels(df$Is_Bad)<-c("Non","Oui")
+levels(df$Est_une_vente_en_ligne)<-c("Non","Oui")
+levels(df$Type_de_transmission)<-c("AUTO","MANUAL","MANUAL")
+df$Age_du_vehicule <- as.factor(df$Age_du_vehicule)
+df$Numero_de_l_acheteur <- as.factor(df$Numero_de_l_acheteur)
+p<-ncol(df)
+df_sans0<-df[df$CVh_B_E_2>2,]
+df_sans0<-df_sans0[df_sans0$CVh_B_D_2>2,]
+df_sans0<-df_sans0[df_sans0$CVh_M_E_2>2,]
+df_sans0<-df_sans0[df_sans0$CVh_M_D_2>2,]
+df_difference_entre_cote_moyen<-(df_sans0[,22]-df_sans0[,20])/df_sans0[,22]*100
+df_difference_entre_cote_bon<-(df_sans0[,23]-df_sans0[,21])/df_sans0[,21]*100
+
+df_sans0<-cbind(df_sans0,df_difference_entre_cote_moyen,df_difference_entre_cote_bon)
+
+
+df1<-df_sans0[,c(1,3,4,5,9,11,12,14,15,28,29,30)]
+FiltreIndividu<-which(rowSums(is.na(df1[,c(1,11,12)]))==0)
+df1 <- df1[FiltreIndividu,]
+df_quali<-df1[,-c(3,7,10,11,12)]
+
+lignes<-nrow(df_quali)
+
+
+
+alloy<-rep(0,lignes)
+alloy[which(df_quali$Type_de_roues=="Alloy")]<-1
+
+covers<-rep(0,lignes)
+covers[which(df_quali$Type_de_roues=="Covers")]<-1
+
+special<-rep(0,lignes)
+special[which(df_quali$Type_de_roues=="Special")]<-1
+
+pas_defini<-rep(0,lignes)
+pas_defini[which(is.na(df_quali$Type_de_roues))]<-1
+
+chrysler<-rep(0,lignes)
+chrysler[which(df_quali$Top_trois_cons_Americains=="CHRYSLER")]<-1
+
+ford<-rep(0,lignes)
+ford[which(df_quali$Top_trois_cons_Americains=="FORD")]<-1
+
+gm<-rep(0,lignes)
+gm[which(df_quali$Top_trois_cons_Americains=="GM")]<-1
+
+other<-rep(0,lignes)
+other[which(df_quali$Top_trois_cons_Americains=="OTHER")]<-1
+
+adesa<-rep(0,lignes)
+adesa[which(df_quali$Encheres=="ADESA")]<-1
+
+
+manheim<-rep(0,lignes)
+manheim[which(df_quali$Encheres=="MANHEIM")]<-1
+
+other_ench<-rep(0,lignes)
+other_ench[which(df_quali$Encheres=="OTHER" )]<-1
+
+df_quali<-cbind(df_quali,alloy,covers,special,pas_defini,manheim,adesa,other_ench,chrysler,ford,gm,other)
+
+
+df_quanti<-df1[,c(1,3,7,10,11,12)]
+df_quanti$Age_du_vehicule<-as.numeric(df_quanti$Age_du_vehicule)
+df1$Age_du_vehicule<-as.numeric(df1$Age_du_vehicule)
+```
+
+```{r}
+df_quali<-df_quali[,-c(2,3,4,5,6,7)]
+```
+
+
+```{r,echo=FALSE,include=FALSE}
+library(missMDA)
+library(utf8)
+library(knitr)
+library(MASS)
+library(kableExtra)
+library(formattable)
+library(RColorBrewer)
+library(corrplot)
+library(data.table)
+library(stargazer)
+library(FactoMineR)
+library(factoextra)
+library(DT)
+library(ggpubr)
+library(ggsci)
+library(class)
+library(rpart)
+library(dplyr)
+library(tidyr)
+library(readr)
+library(ggplot2)
+theme_set(theme_minimal())
+library(rsample)
+library(caret)
+library(randomForest)
+library(rpart.plot)
+library(VIM)
+library(parallel)
+library(ROCR)
+library(plotROC)
+library(e1071)
+library(caret)
+library(doParallel)
+library(precrec)
+library(ranger)
+library(scales)
+```
+
+**Facteurs de différenciations**
+
+Tout d'abord l'âge, il semblerait que ce soit l'un des facteurs qui différencie le plus les deux groupes. En effet, la proportion des voitures agées chez les mauvais achats est plus élevée que chez les bons achats. Il semblerait aussi que la proportion de véhicules équipés de roues alloy soit plus élevée chez les mauvais achats que chez les bons achats.
+
+```{r}
+df_is_bad<-df[df$Is_Bad=="Oui",]
+df_is_not_bad<-df[df$Is_Bad=="Non",]
+gg1<-ggplot(data.frame(round(prop.table(table(df_is_not_bad$Age_du_vehicule))*100)), aes(x=Var1, y=Freq)) +
+  geom_bar(stat="identity", fill="lightblue")+ylim(0,25)+
+  geom_text(aes(label=Freq), vjust=-0.3, color="black", size=3.5)+
+  theme_minimal()+
+  labs( x = "Âge d'un bon achat", y = "Fréquence")  
+gg2<-ggplot(data.frame(round(prop.table(table(df_is_bad$Age_du_vehicule))*100)), aes(x=Var1, y=Freq)) +
+  geom_bar(stat="identity", fill="steelblue")+ylim(0,25)+
+  geom_text(aes(label=Freq), vjust=-0.3, color="black", size=3.5)+
+  theme_minimal()+
+  labs( x = "Age d'un mauvais achat", y = "Fréquence")
+gg3<-ggplot(data.frame(round(prop.table(table(df_is_not_bad$Type_de_roues))*100)), aes(x=Var1, y=Freq)) +
+  geom_bar(stat="identity", fill="lightblue")+ylim(0,60)+
+  geom_text(aes(label=Freq), vjust=-0.3, color="black", size=3.5)+
+  theme_minimal()+
+  labs( x = "Type de roues d'un bon achat", y = "Fréquence")  
+gg4<-ggplot(data.frame(round(prop.table(table(df_is_bad$Type_de_roues))*100)), aes(x=Var1, y=Freq)) +
+  geom_bar(stat="identity", fill="steelblue")+ylim(0,60)+
+  geom_text(aes(label=Freq), vjust=-0.3, color="black", size=3.5)+
+  theme_minimal()+
+  labs( x = "Type de roues d'un mauvais achat", y = "Fréquence")
+ggg1<-ggarrange(gg1,gg2)
+
+
+df1$Age_du_vehicule<-as.numeric(df1$Age_du_vehicule)
+```
+```{r}
+ggarrange(gg3,gg4)
+```
+
+
+En étudiant les types de roues de plus près, on observe que certaines lignes de notre base de données contiennent des données manquantes sur le type de roues. On pourrait imaginer que lorsque le type de roues n'est pas rentré dans la base de données, c'est peut être parce qu'un remplacement de roues ou une réparation est nécessaire. Observons la répartition de ces données manquantes sur les deux groupes.
+
+```{r}
+df_quali_is_bad<-df_quali[df_quali$Is_Bad=="Oui",]
+df_quali_is_not_bad<-df_quali[df_quali$Is_Bad=="Non",]
+
+gg1<-ggplot(data.frame(round(prop.table(table(df_quali_is_not_bad$pas_defini))*100)), aes(x=Var1, y=Freq)) +
+  geom_bar(stat="identity", fill="lightblue")+ylim(0,25)+
+  geom_text(aes(label=Freq), vjust=-0.3, color="black", size=3.5)+
+  theme_minimal()+
+  labs( x = "Proportion de types de roues non définis \nchez les bons achats", y = "Fréquence")  
+gg2<-ggplot(data.frame(round(prop.table(table(df_quali_is_bad$pas_defini))*100)), aes(x=Var1, y=Freq)) +
+  geom_bar(stat="identity", fill="steelblue")+ylim(0,25)+
+  geom_text(aes(label=Freq), vjust=-0.3, color="black", size=3.5)+
+  theme_minimal()+
+  labs( x = "Proportion de types de roues non définis \nchez les mauvais achats", y = "Fréquence")
+
+ggarrange(gg1,gg2)
+
+
+```
+Il y a 25 fois plus de types de roues non définis chez les mauvais achats que chez les bons achats. 
+
+Il semblerait aussi y avoir relativement plus de mauvais achats aux enchères Manheim. Les mauvais achats sont aussi relativement plus représentés chez Ford que les bons achats.
+
+```{r}
+gg1<-ggplot(data.frame(round(prop.table(table(df_is_not_bad$Encheres))*100)), aes(x=Var1, y=Freq)) +
+  geom_bar(stat="identity", fill="lightblue")+ylim(0,60)+
+  geom_text(aes(label=Freq), vjust=-0.3, color="black", size=3.5)+
+  theme_minimal()+
+  labs( x = "Enchères/bon achat ", y = "Fréquence")  
+gg2<-ggplot(data.frame(round(prop.table(table(df_is_bad$Encheres))*100)), aes(x=Var1, y=Freq)) +
+  geom_bar(stat="identity", fill="steelblue")+ylim(0,60)+
+  geom_text(aes(label=Freq), vjust=-0.3, color="black", size=3.5)+
+  theme_minimal()+
+  labs( x = "Enchères/mauvais achat", y = "Fréquence")
+gg3<-ggplot(data.frame(round(prop.table(table(df_is_not_bad$Top_trois_cons_Americains))*100)), aes(x=Var1, y=Freq)) +
+  geom_bar(stat="identity", fill="lightblue")+ylim(0,40)+
+  geom_text(aes(label=Freq), vjust=-0.3, color="black", size=3.5)+
+  theme_minimal()+
+  labs( x = "Constructeur/Bon achat", y = "Fréquence")  
+gg4<-ggplot(data.frame(round(prop.table(table(df_is_bad$Top_trois_cons_Americains))*100)), aes(x=Var1, y=Freq)) +
+  geom_bar(stat="identity", fill="steelblue")+ylim(0,40)+
+  geom_text(aes(label=Freq), vjust=-0.3, color="black", size=3.5)+
+  theme_minimal()+
+  labs( x = "Constructeur/Mauvais achat", y = "Fréquence")
+ggarrange(gg1,gg2)
+ggarrange(gg3,gg4)
+```
+
+
+
+**Facteurs de différenciation absents**
+
+Les variables suivantes ne différencient pas les deux groupes, ils sont clairement répartis de la même façon. Ce ne sont pas des variables pertinentes pour notre analyse.
+
+En premier la nationalité du constructeur du véhicule n'a pas vraiment de différence dans la répartition pour les deux groupes, on peut mettre en lien avec cela le fait que les différences de répartition se font uniquement entre les fabricants américains.
+
+```{r}
+gg1<-ggplot(data.frame(round(prop.table(table(df_is_not_bad$Nationalite))*100)), aes(x=Var1, y=Freq)) +
+  geom_bar(stat="identity", fill="lightblue")+ylim(0,90)+
+  geom_text(aes(label=Freq), vjust=-0.3, color="black", size=3.5)+
+  theme_minimal()+
+  labs( x = "Nationalité/Bon achat", y = "Fréquence")  
+gg2<-ggplot(data.frame(round(prop.table(table(df_is_bad$Nationalite))*100)), aes(x=Var1, y=Freq)) +
+  geom_bar(stat="identity", fill="steelblue")+ylim(0,90)+
+  geom_text(aes(label=Freq), vjust=-0.3, color="black", size=3.5)+
+  theme_minimal()+
+  labs( x = "Nationalité/Mauvais achat", y = "Fréquence")
+
+ggarrange(gg1,gg2)
+```
+
+Il semblerait que les proportions de ventes en ligne chez les deux groupes soient égales. Ainsi que le type de transmission.
+
+
+```{r}
+gg1<-ggplot(data.frame(round(prop.table(table(df_is_not_bad$Est_une_vente_en_ligne))*100)), aes(x=Var1, y=Freq)) +
+  geom_bar(stat="identity", fill="lightblue")+
+  geom_text(aes(label=Freq), vjust=-0.3, color="black", size=3.5)+
+  theme_minimal()+
+  labs( x = "Âge d'un bon achat", y = "Fréquence")  
+gg2<-ggplot(data.frame(round(prop.table(table(df_is_bad$Est_une_vente_en_ligne))*100)), aes(x=Var1, y=Freq)) +
+  geom_bar(stat="identity", fill="steelblue")+
+  geom_text(aes(label=Freq), vjust=-0.3, color="black", size=3.5)+
+  theme_minimal()+
+  labs( x = "Âge d'un mauvais achat", y = "Fréquence")
+gg3<-ggplot(data.frame(round(prop.table(table(df_is_not_bad$Type_de_transmission))*100)), aes(x=Var1, y=Freq)) +
+  geom_bar(stat="identity", fill="lightblue")+
+  geom_text(aes(label=Freq), vjust=-0.3, color="black", size=3.5)+
+  theme_minimal()+
+  labs( x = "Type de transmission", y = "Fréquence")  
+gg4<-ggplot(data.frame(round(prop.table(table(df_is_bad$Type_de_transmission))*100)), aes(x=Var1, y=Freq)) +
+  geom_bar(stat="identity", fill="steelblue")+
+  geom_text(aes(label=Freq), vjust=-0.3, color="black", size=3.5)+
+  theme_minimal()+
+  labs( x = "Type de transmission", y = "Fréquence")
+ggarrange(gg1,gg2)
+ggarrange(gg3,gg4)
+```
+
+```{r}
+gg1<-ggplot(data.frame(sort(round(prop.table(table(df_is_not_bad$Couleur))*100))), aes(x=Var1, y=Freq)) +
+  geom_bar(stat="identity", fill="lightblue")+
+  geom_text(aes(label=Freq),  hjust=1.5, color="white", size=3.5)+
+  theme_minimal()+
+  labs( x = "Couleur/bon achat", y = "Fréquence") +coord_flip() 
+gg2<-ggplot(data.frame(sort(round(prop.table(table(df_is_bad$Couleur))*100))), aes(x=Var1, y=Freq)) +
+  geom_bar(stat="identity", fill="steelblue")+
+  geom_text(aes(label=Freq),  hjust=1.5, color="white", size=3.5)+
+  theme_minimal()+
+  labs( x = "Couleur/Mauvais achat", y = "Fréquence")+coord_flip()
+gg3<-ggplot(data.frame(sort(round(prop.table(table(df_is_not_bad$Taille))*100))), aes(x=Var1, y=Freq)) +
+  geom_bar(stat="identity", fill="lightblue")+
+  geom_text(aes(label=Freq),  hjust=1.3, color="white", size=3.5)+
+  theme_minimal()+
+  labs( x = "Taille/bon achat", y = "Fréquence")+coord_flip()  
+gg4<-ggplot(data.frame(sort(round(prop.table(table(df_is_bad$Taille))*100))), aes(x=Var1, y=Freq)) +
+  geom_bar(stat="identity", fill="steelblue")+
+  geom_text(aes(label=Freq), hjust=1.3, color="white", size=3.5)+
+  theme_minimal()+
+  labs( x = "Taille/mauvais achat", y = "Fréquence")+coord_flip()
+ggarrange(gg1,gg2)
+ggarrange(gg3,gg4)
+```
+
+
+
+
+
+### Quantitatives
+
+Pour construire nos modèles prédictifs nous ne pourrons pas utiliser le prix de vente du véhicule aux enchères car c'est une donnée que nous ne possédons pas normalement à l'avance. Pour palier à ce manque, nous avons décidé de créer des mesures qui pourraient potentiellement aider notre modèle à être plus précis.
+
+* Comparaison des variations entre les cotes aux enchères et les cotes aux détaillants pour tous les états des véhicules
+
+* Calcul des mesures : $Mesures=\frac{CoteDetaillant_{EtatVeh}-CoteEncheres_{EtatVeh}}{CoteEncheres}*100$
+
+* Plus le pourcentage est élevé plus l'acheteur peut espérer gagner de l'argent sur la revente du véhicule par rapport à la valeur estimée aux enchères
+
+Ici toutes les variables différencient les deux groupes. Cela reste néanmoins une différenciation très faible. On a comparé les densités relatives à chaque groupe afin d'avoir des premiers présentiments sur nos futurs modèles et résultats.
+
+Au premier semestre nous avions déjà étudié la différence de kilométrage entre les deux groupes et avions conclu que les mauvais achats avaient un kilometrage relativement plus élevé que les bons achats.
+
+```{r}
+library(plyr)
+mu <- ddply(df1, "Is_Bad", summarise, grp.mean=mean(Kilometrage))
+
+
+p<-ggplot(df1, aes(x=Kilometrage, fill=Is_Bad)) +
+  geom_density(alpha=0.4)+geom_vline(data=mu, aes(xintercept=grp.mean, color=Is_Bad),
+             linetype="dashed")
+
+
+p
+```
+
+Quand on regarde les nuages de points du kilometrage en fonction des autres quantitatives on peut voir que les deux groupes sont très similairement répartis.
+
+
+```{r}
+data_split <- df1 %>% initial_split(prop = 1/35)
+#création des sous-échantillons apprentissage-test
+df1b <- data_split %>% training()
+
+g2<-ggplot(df1b, aes(x = Kilometrage, y = Cout_de_la_garantie)) +
+   geom_point(aes(color = factor(Is_Bad)))
+g3<-ggplot(df1b, aes(x = Kilometrage, y = df_difference_entre_cote_moyen)) +
+   geom_point(aes(color = factor(Is_Bad)))
+g4<-ggplot(df1b, aes(x = Kilometrage, y = df_difference_entre_cote_bon)) +
+   geom_point(aes(color = factor(Is_Bad)))
+
+ggarrange(g2,g3)
+g4
+```
+
+
+```{r}
+mu <- ddply(df1, "Is_Bad", summarise, grp.mean=mean(Cout_de_la_garantie))
+
+
+p<-ggplot(df1, aes(x=Cout_de_la_garantie, fill=Is_Bad)) +
+  geom_density(alpha=0.4)+geom_vline(data=mu, aes(xintercept=grp.mean, color=Is_Bad),
+             linetype="dashed")
+
+
+p
+```
+
+
+```{r}
+g3<-ggplot(df1b, aes(x = Cout_de_la_garantie, y = df_difference_entre_cote_moyen)) +
+   geom_point(aes(color = factor(Is_Bad)))
+g4<-ggplot(df1b, aes(x = Cout_de_la_garantie, y = df_difference_entre_cote_bon)) +
+   geom_point(aes(color = factor(Is_Bad)))
+
+ggarrange(g3,g4)
+
+```
+
+Les deux graphiques suivants donnent des conclusions particulières, on peut voir que les véhicules mauvais achats, peu importe l'état ont une différence entre les cotes au détaillant et les cotes aux enchères plus grande que les bons achats. Ce qui est contre intuitif. On avait vu au premier semestre que les cotes aux enchères pour les véhicules mauvais achats sont moins élevées ce qui cause peut être cette différence.
+
+```{r}
+mu <- ddply(df1, "Is_Bad", summarise, grp.mean=mean(df_difference_entre_cote_moyen))
+
+
+p<-ggplot(df1, aes(x=df_difference_entre_cote_moyen, fill=Is_Bad)) +
+  geom_density(alpha=0.4)+geom_vline(data=mu, aes(xintercept=grp.mean, color=Is_Bad),
+             linetype="dashed")
+
+
+p
+mu1 <- ddply(df1, "Is_Bad", summarise, grp.mean=mean(df_difference_entre_cote_bon))
+
+
+p1<-ggplot(df1, aes(x=df_difference_entre_cote_bon, fill=Is_Bad)) +
+  geom_density(alpha=0.4)+geom_vline(data=mu1, aes(xintercept=grp.mean, color=Is_Bad),
+             linetype="dashed")
+
+
+p1
+
+
+```
+
+
+En observant ces différents nuages de points et densités on peut déjà imaginer que les modèles de prédiction vont avoir du mal à repérer les différents groupes. On a déjà l'intuition que les analyses linéaires et quadratiques discriminantes ainsi que les k-plus proches voisins vont avoir du mal à bien prédire le groupe le moins représenté vu qu'il se confond avec le groupe le plus représenté.
+
+
+Avant de commencer à construire nos modèles, il convient d'avoir une réflexion sur ce que l'on cherche. En effet, avec des problèmes de sous-représentation des mauvais achats et le fait que les deux classes ne semblent pas avoir de véritables facteurs discriminants, il semble compliqué de correctement prédire les mauvais achats. En revanche, nous allons essayer de construire des modèles qui prédisent le plus précisement possible les bons achats en essayant de minimiser l'erreur d'estimation globale et le classement de mauvais achats en bons achats.   
+
+\newpage
+
+# Analyse linéaire discriminante
+
+```{r}
+set.seed(12345)
+data_split <- df_quanti %>% initial_split(prop = 1/10)
+#création des sous-échantillons apprentissage-test
+test_data <- data_split %>% testing()
+train_data <- data_split %>% training()
+
+lda.mod<-lda(Is_Bad ~. ,data=train_data)
+res.lda<-predict(lda.mod,newdata=train_data)
+
+```
+
+
+```{r}
+
+Prediction <- res.lda$class
+Realite <- train_data$Is_Bad
+Matconf <- table(Realite, Prediction)
+
+kable(addmargins(Matconf), caption = "Matrice de confusion") -> x
+add_header_above(
+  kable_styling(x,
+              full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"),latex_options = ("HOLD_position"))
+  , c("Réalité", "Prediction"= 3)
+  )
+```
+```{r}
+matCon.prop <- round(prop.table(Matconf, margin = 1)*100, 1)
+kable(matCon.prop ,  caption = "Proportion en ligne de la Matrice de confusion") -> x
+add_header_above(
+  kable_styling(x,
+              full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"),latex_options = ("HOLD_position"))
+  , c("Réalité", "Prediction"= 2)
+  )
+
+```
+
+  Après réalisation d'une LDA sur les variables quantitatives kilométrage, Cout de la garantie et Âge du véhicule, nous observons que le modèle n'est pas précis avec `r Matconf[2,2]` mauvais achats de véhicule prédits. En sachant que l'intérêt d'une prédiction sur nos données est de prédire si un véhicule est un mauvais achat nous réalisons la courbe Roc dans l'espoir d'améliorer le modèle.
+
+
+
+```{r}
+pred.lda <- prediction(res.lda$posterior[,2], train_data$Is_Bad)
+roc.lda <- performance(pred.lda, "tpr", "fpr")
+plot(roc.lda, col = "red" )
+segments(0,0,1,1)
+```
+
+
+Malheureusement la courbe Roc, bien que légèrement concave est très proche de la bissectrice cela nous indique qu'il sera donc difficile de prédire correctement si un véhicule est un mauvais achat ou non. 
+
+
+```{r}
+N<-sum(train_data$Is_Bad=="Non") 
+P<-sum(train_data$Is_Bad=="Oui")
+Error<-NULL 
+ErrorI<-NULL
+ErrorII<-NULL 
+for(i in 1:101){
+  c<-(i-1)/200 
+  Prediction <- rep("Non", nrow(train_data)) 
+  Prediction[res.lda$posterior[,2]>c]<-"Oui"
+  Error[i]<-sum(Prediction!=Realite)/nrow(train_data) 
+  ErrorI[i]<-sum((Prediction=="Oui")&(Realite=="Non"))/N
+  ErrorII[i]<-sum((Prediction=="Non")&(Realite=="Oui"))/P 
+  } 
+
+seuil <- seq(0, 0.5, by = (0.5/100))
+df_error <- cbind(seuil, Error, ErrorI, ErrorII)
+df_error <- as.data.frame(df_error)
+
+
+p <- ggplot(data=df_error)  + geom_line(data=df_error, aes(x=seuil, y=ErrorI, colour = "1-Spécificité (Erreur type I)"))+ geom_line(data=df_error, aes(x=seuil, y=ErrorII, colour = "1-sensibilité (Erreur type II)")) + geom_line(data=df_error, aes(x=seuil, y=Error, colour = "Erreur Globale")) + ggtitle("Graphiques des différentes erreurs")
+
+p
+
+```
+ 
+  Nous voulons diminuer l'erreur sur la sensibilité donc pour ce faire nous devons baisser le seuil de décision du modèle. Après analyse du graphique ci-dessus nous choisissons le seuil optimal de 0.14 qui permet de diminuer l'erreur de sensibilité tout en conservant une erreur globale et une erreur de spécificité correcte. 
+  Nous réalisons donc une LDA avec ce nouveau seuil. 
+
+```{r}
+nouveau<-rep("No", nrow(train_data))
+nouveau[res.lda$posterior[,2]>0.14]<- "Yes"
+Matconf2<-table(Realite, nouveau)
+
+kable(addmargins(Matconf2), caption = "Matrice de confusion") -> x
+
+add_header_above(
+  kable_styling(x,
+              full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"),latex_options = ("HOLD_position"))
+  , c("Réalité", "Prediction"= 3)
+  )
+```
+```{r}
+matCon.prop2 <- round(prop.table(Matconf2, margin = 1)*100, 1)
+kable(matCon.prop2 ,  caption = "Proportion en ligne de la Matrice de confusion") -> x
+add_header_above(
+  kable_styling(x,
+              full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"), latex_options = ("HOLD_position"))
+  , c("Réalité", "Prediction"= 2)
+  )
+```
+```{r}
+Err_globale<-(Matconf2[1 , 2]+Matconf2[2 , 1])/nrow(train_data)*100
+Err_globale
+```
+
+  En utilisant le nouveau seuil de décision on trouve un modèle prédictif bien plus sensible. En effet, la sensibilité est passé de  `r matCon.prop[2,2]` à  `r matCon.prop2[2,2]` donc la chance de prédire un bon achat à la place d'un mauvais achat a nettement diminué. Cette diminution se fait au détriment de la spécificité ,même si nous sommes moins intéressés par cette dernière. On peut relever qu'elle passe de  `r matCon.prop[1,1]` à  `r matCon.prop2[1,1]`.
+  
+  Bien que ce modèle ne soit pas très précis, c'est le mieux que nous pouvons faire avec une lda. Cela nous indique, comme le montre les nuages de points, que la discrimination linéaire n'est pas adaptée et que l'obtention de groupes ne se fera pas au travers d'une LDA. 
+  
+\newpage
+
+# Analyse quadratique discriminante
+
+
+```{r}
+df_QDA <- df_quanti
+FiltreIndividu<-which(rowSums(is.na(df_QDA))==0)
+df_QDA <- df_QDA[FiltreIndividu,]
+
+data_split <- df_QDA %>% initial_split(prop = 2/3)
+#création des sous-échantillons apprentissage-test
+test_data <- data_split %>% testing()
+train_data <- data_split %>% training()
+```
+
+```{r}
+qda.fit <- qda(Is_Bad~., data = train_data)
+res.qda <- predict(qda.fit, newdata =train_data)
+```
+
+Nous avons réalisé une QDA de la variable `Is_Bad` sur les variables `Age_du_Vehicules`, `Cout_de_la_garantie`, `kiliometrage` et les differences entre les côtes.
+
+```{r}
+Prediction <- res.qda$class
+Realite <- train_data$Is_Bad
+Matconf <- table(Realite, Prediction)
+
+kable(addmargins(Matconf), caption = "Matrice de confusion") -> x
+add_header_above(
+  kable_styling(x,
+              full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"),latex_options = ("HOLD_position"))
+  , c("Réalité", "Prediction"= 3)
+  )
+```
+
+```{r}
+matCon.prop <- round(prop.table(Matconf, margin = 1)*100, 1)
+kable(matCon.prop ,  caption = "Proportion en ligne de la Matrice de confusion") -> x
+add_header_above(
+  kable_styling(x,
+              full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"),latex_options = ("HOLD_position"))
+  , c("Réalité", "Prediction"= 2)
+  )
+
+```
+
+```{r}
+Err_globale<-(Matconf[1 , 2]+Matconf[2 , 1])/nrow(train_data)*100
+Err_globale <- round(Err_globale, 2)
+```
+
+ Le modèle prédit très mal les mauvais achats avec seulement `r Matconf[2,2]` prédits correctement, cependant, le modèle est meilleur que la LDA. En revanche, la prédiction des bons achats est bonne. L'erreur globale du modèle est de  `r Err_globale`%. L'intéret de notre modèle étant de prédire les voitures en mauvais état pincipalement, nous réalisons la courbe ROC. 
+
+
+
+```{r}
+pred.qda <- prediction(res.qda$posterior[,2], train_data$Is_Bad)
+roc.qda <- performance(pred.qda, "tpr", "fpr")
+plot(roc.qda, col = "red" )
+segments(0,0,1,1)
+```
+
+Cette courbe ROC est assez proche de la bisséctrice. Elle nous montre finalement qu'en cherchant à augmenter le taux de vrai positifs (sensibilité), le taux de faux positifs augmentera dans des proportions quasi similaires, ce qui n'améliore pas le modèle significativement. Le meilleur résultat à obtenir est un taux de vrai positifs d'environ 60% mais le taux de faux positifs sera de 40% environ, ce qui est élevé.
+
+```{r}
+N<-sum(train_data$Is_Bad=="Non") 
+P<-sum(train_data$Is_Bad=="Oui")
+Error<-NULL 
+ErrorI<-NULL
+ErrorII<-NULL 
+for(i in 1:101){
+  c<-(i-1)/200 
+  Prediction <- rep("Non", nrow(train_data)) 
+  Prediction[res.qda$posterior[,2]>c]<-"Oui"
+  Error[i]<-sum(Prediction!=Realite)/nrow(train_data) 
+  ErrorI[i]<-sum((Prediction=="Oui")&(Realite=="Non"))/N
+  ErrorII[i]<-sum((Prediction=="Non")&(Realite=="Oui"))/P 
+  } 
+
+seuil <- seq(0, 0.5, by = (0.5/100))
+df_error <- cbind(seuil, Error, ErrorI, ErrorII)
+df_error <- as.data.frame(df_error)
+
+
+p <- ggplot(data=df_error)  + geom_line(data=df_error, aes(x=seuil, y=ErrorI, colour = "1-Spécificité (Erreur Type I)"))+ geom_line(data=df_error, aes(x=seuil, y=ErrorII, colour = "1-sensibilité (Erreur Type II)")) + geom_line(data=df_error, aes(x=seuil, y=Error, colour = "Erreur Globale")) + ggtitle("Graphiques des différentes erreurs")
+p
+
+
+
+```
+
+Ce graphique nous permet de voir qu'une erreur globale faible entraine forcément un sensibilité faible. Or on cherche à avoir une sensibilité plutot élevée car il est important de ne pas prédire une voiture comme bon achat alors que c'est un mauvais achat. Cependant, si on veut augmenter cette sensibilité, l'erreur globale  et la spécificité diminuent forcément.
+
+On décide donc d'abaisser le seuil à 0.15 afin de faire augmenter la sensibilité tout en gardant une erreur globale raisonnable. On testera ce nouveau modèle sur les données tests.
+
+
+
+```{r}
+
+nouvelle_Prediction <- rep("No", nrow(test_data))
+res.qda <- predict(qda.fit, newdata =test_data)
+nouvelle_Prediction [res.qda$posterior[,2]>0.15] <- "Yes"
+Realite<-test_data$Is_Bad
+Matconf2 <- table(Realite, nouvelle_Prediction)
+kable(addmargins(Matconf2), caption = "Matrice de confusion") -> x
+
+add_header_above(
+  kable_styling(x,
+              full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"),latex_options = ("HOLD_position"))
+  , c("Réalité", "Prediction"= 3)
+  )
+
+```
+
+```{r}
+
+matCon.prop2 <- round(prop.table(Matconf2, margin = 1)*100, 1)
+kable(matCon.prop2 ,  caption = "Proportion en ligne de la Matrice de confusion") -> x
+add_header_above(
+  kable_styling(x,
+              full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"), latex_options = ("HOLD_position"))
+  , c("Réalité", "Prediction"= 2)
+  )
+```
+
+```{r}
+Err_globale<-(Matconf2[1 , 2]+Matconf2[2 , 1])/nrow(train_data)*100
+```
+
+Cet ajustement du seuil nous permet de prédire beaucoup plus de mauvais achats. La sensitivité passe de  `r matCon.prop[2,2]`% à  `r matCon.prop2[2,2]`%. Ainsi, l'erreur de type II, c'est à dire le taux de voitures predites comme bon achats alors qu'elles sont de mauvais achats en réalité a diminué mais reste élevé (`r matCon.prop2[2,1]`%). De plus, on perd de la précision dans la prédiction des bon achats avec seulement `r matCon.prop2[1,1]`% de bonnes predictions sur les bons achats contre  `r matCon.prop[1,1]`% sur le modèle précédent. De plus, notre erreur globale augmente et passe à `r Err_globale`%.
+
+En conclusion, cette QDA prédit assez mal si une voiture est un mauvais achat ou non. Il est difficille de connaitre en particulier les mauvais achats et lorsqu'on améliore cette prediction, l'erreur globale de prediction augmente car on predit mal les bons achats.
+
+\newpage
+
+# Les k-plus proches voisins
+
+Pour réaliser notre modèle KNN nous avons séléctionné comme précedemment les variables quantitatives qui différencient le plus nos deux groupes, nous selectionnerons donc comme précédemment pour la LDA et la QDA:
+
+* le coût du véhicule
+* le kilométrage
+* le coût de la garantie
+* la différence entre les différentes cotes au moment de l'achat et le coût du véhicule
+
+
+## Un découpage
+
+Nous testons d'abord avec un seul découpage aléatoire de nos données (66,7% données d'entrainement, 33,3% données de test). Nous décidons d'un nombre classique de 3 voisins.
+
+```{r}
+set.seed(12345)
+data_split <- df_quanti %>% initial_split(prop = 1/10)
+
+test_data <- data_split %>% testing()
+train_data <- data_split %>% training()
+
+K <- 3
+
+knn.pred.prob <- knn(train = train_data[,-1], test = train_data[,-1],
+                    cl = train_data[, "Is_Bad"], k=K, prob = TRUE)
+Tab<-rbind(addmargins(table(train_data[,1],knn.pred.prob)),cbind(round(prop.table(table(train_data[,1],knn.pred.prob), 1L)*100,2),c("","")))
+rownames(Tab)<-c("Non","Oui","Sum","Non","Oui")
+x <- kable_styling(kable(Tab,caption = "Matrice de confusion"),
+             position = "center",
+             bootstrap_options="basic",latex_options = c("HOLD_position"), font_size = 9)
+add_header_above(add_header_above(x,header = c( "Erreur globale",round(mean(train_data[,1]!=knn.pred.prob)*100,2),"",""), font_size = 10, bold = T),header = c( "","Prédiction"=3), font_size = 10, bold = T)
+
+
+```
+
+L'erreur globale est de `r round(mean(train_data[,1]!=knn.pred.prob)*100,2)`%, les bons achats sont très bien estimés, par contre les mauvais achats sont très souvent classés bons achats. Ce qui est la pire prédiction possible.
+
+Pour améliorer le modèle la seule chose que l'on peut faire est de modifier le nombre de voisins, nous allons donc regarder les performances du modèle en fonction du nombre de voisins.
+
+## Tuning des knn
+
+On tune maintenant les knn, en utilisant des échantillons générés par validation croisée, pour décider le nombre de voisins (entre 1 et 5) qui diminue le plus l'erreur globale. 
+
+```{r}
+x<-train_data[,-1]
+y<-train_data[,1]
+obj2 <- tune.knn(x, y, k = 1:5, tunecontrol = tune.control(sampling = "cross"))
+meilleure_erreur<-round(obj2$best.performance*100,2)
+dispersion<-round(obj2$performances$dispersion*100,2)
+tune_err<-round(obj2$performances$error*100,2)
+tune_k<-obj2$performances$k
+Tab<-cbind(tune_k,tune_err,dispersion)
+colnames(Tab)<-c("K","Erreur globale","Dispersion")
+x <- kable_styling(kable(Tab,caption = "Choix du meilleur K"),
+              position = "center",
+              bootstrap_options="basic",latex_options = c("HOLD_position"), font_size = 9)
+add_header_above(x,header = c( "Erreur globale minimale",meilleure_erreur,""), font_size = 10, bold = T)
+
+
+```
+
+L'erreur globale est la plus faible avec 5 voisins, ainsi que la dispersion de l'erreur.
+Nous choisirons donc 5 voisins.
+
+## Validation croisée
+
+Nous avons décidé de tester les knn sur 100 échantillons générés par validation croisée afin d'avoir potentiellement une meilleure erreur. Nous avons aussi testé les knn sur des échantillons bootstrap mais l'erreur étant bien plus élevée par souci d'optimisation des capacités de calcul de l'ordinateur nous avons décidé de ne pas les inclure.
+
+```{r}
+cv <- vfold_cv(df_quanti, v = 5, repeats = 20)
+Npop<-nrow(df_quanti)
+K <- 5
+err.cv <- NULL
+for (i in 1:100){
+      cv.ind <- cv$splits[[i]]$in_id
+      test.ind <- setdiff(1:Npop, cv.ind)
+      knn.pred <- knn(train = df_quanti[cv.ind,-1], test = df_quanti[test.ind,-1],cl = df_quanti[cv.ind,1], k=K)
+      err.cv[i] <- mean(df_quanti[test.ind,1]!=knn.pred)
+}
+nb_echan<-1:100
+t<-cbind(err.cv,nb_echan)
+t<-as.data.frame(t)
+p <- ggplot(data=t)  + geom_line(data=t, aes(x=nb_echan,y=err.cv,color="cv"))+ylim(0.12,0.16)+ggtitle("Evolution de l'erreur")
+p
+
+Tab<-rbind(addmargins(table(df_quanti[-cv.ind,1],knn.pred)),cbind(round(prop.table(table(df_quanti[-cv.ind,1],knn.pred), 1L)*100,2),c("","")))
+rownames(Tab)<-c("Non","Oui","Sum","Non","Oui")
+x <- kable_styling(kable(Tab,caption = "Matrice de confusion avec validation croisée"),
+              position = "center",
+              bootstrap_options="basic",latex_options = c("HOLD_position"), font_size = 9)
+add_header_above(add_header_above(x,header = c( "Erreur globale",round(mean((df_quanti[-cv.ind,1])!=knn.pred)*100,2),"",""), font_size = 10, bold = T),header = c( "","Prédiction"=3), font_size = 10, bold = T)
+
+```
+
+On voit que l'erreur globale est stable sur la centaine d'échantillons générés par validation croisée, la variance de l'erreur est donc faible ainsi que le biais(bénéfice des échantillons croisés), le modèle n'en reste pas moins mauvais avec une erreur globale faible mais presque aucun mauvais véhicule repéré.
+
+Nous pourrions faire le même commentaire qu'avec la LDA et la QDA, si on diminue le nombre de voisins, le modèle est légèrement plus spécifique mais beaucoup moins sensible, la précision du modèle en est grandement affectée. A l'inverse, si on cherche à optimiser l'erreur globale, la spécificité est très mauvaise.
+
+\newpage
+
+# Arbres de décisions
+
+Réalisons les arbres de décisions sur les variables quantitatives en rajoutant certaines qualitatives intéressantes telles que les types de roues, les enchères et les constructeurs.
+
+```{r}
+df_arbre<-cbind(df_quanti,df_quali[,-1])
+set.seed(12345)
+data_split <- df_arbre %>% initial_split(prop = 1/10)
+test_data <- data_split %>% testing()
+train_data <- data_split %>% training()
+
+control.max <- rpart.control(cp = 0, max.depth = 0, minbucket = 1, minsplit = 1)
+tree <- rpart(Is_Bad~. , data = train_data, control = control.max,
+            parms = list(split = "information"))
+
+```
+
+
+On essaie de trouver le meilleur élaguage avec l'arbre suivant :
+
+```{r}
+registerDoParallel(cores = detectCores() - 4)
+ctrlCv <- trainControl(method = "repeatedcv", repeats = 10)
+rpartGrid <- expand.grid(cp = tree$cp[,1])
+rpart.caret <- train(Is_Bad~., data = train_data, method="rpart",trControl = ctrlCv, tuneGrid = rpartGrid, na.action = na.rpart)
+
+stopImplicitCluster()
+
+confM<-confusionMatrix(data = predict(rpart.caret$finalModel, train_data[,-1], type='class'),
+                reference = pull(train_data, Is_Bad), 
+                mode = "everything", positive = "Oui")
+glob_elag<-1-confM$overall[1]
+kable(addmargins(confM$table), caption = "Matrice de confusion") -> x
+arbre_elag<-confM$byClass
+add_header_above(
+  kable_styling(x,
+              full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"),latex_options = ("HOLD_position"))
+  , c("Prediction","Réalité" = 3)
+  )
+
+matCon.prop <- round(prop.table(confM$table, margin = 2)*100, 1)
+
+kable(matCon.prop ,  caption = "Proportion en ligne de la Matrice de confusion") -> x
+add_header_above(
+  kable_styling(x,
+              full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"),latex_options = ("HOLD_position"))
+  , c( "Prediction","Réalité"= 2)
+  )
+
+kable(confM$byClass) ->x
+kable_styling(x,full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"),latex_options = ("HOLD_position"))
+
+prp(rpart.caret$finalModel)
+```
+
+On a un arbre très court avec une erreur globale la plus faible qu'on ait obtenue jusqu'ici, qui repère beaucoup mieux les mauvais achats 
+
+
+On cherche maintenant l'arbre qui maximise l'aire sous la courbe ROC.
+
+```{r}
+
+registerDoParallel(cores = detectCores() - 2)
+
+ctrlCv.auc <- trainControl(method = "cv", number = 10, 
+                           summaryFunction = twoClassSummary, classProbs = TRUE)
+rpartGrid <- expand.grid(cp = tree$cp[,1])
+rpart.caret.auc <- train(Is_Bad~., data = train_data, method="rpart",
+                                 trControl = ctrlCv.auc, tuneGrid = rpartGrid, na.action = na.rpart,
+                                 metric = "ROC")
+
+stopImplicitCluster()
+  
+
+rpart.caret.auc$bestTune
+
+
+```
+
+```{r}
+confusionMatrix(data = predict(rpart.caret.auc$finalModel, train_data[,-1], type = "class"),
+                reference = pull(train_data, Is_Bad), 
+                mode = "everything", positive = "Oui") -> CF_total
+auc_mod<-CF_total$byClass
+glob_auc<-1-CF_total$overall[1]
+```
+```{r}
+kable(addmargins(CF_total$table), caption = "Matrice de confusion") -> x
+add_header_above(
+  kable_styling(x,
+              full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"),latex_options = ("HOLD_position"))
+  , c("Prediction","Réalité" = 3)
+  )
+```
+
+```{r}
+matCon.prop <- round(prop.table(CF_total$table, margin = 2)*100, 1)
+kable(matCon.prop ,  caption = "Proportion en ligne de la Matrice de confusion") -> x
+add_header_above(
+  kable_styling(x,
+              full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"),latex_options = ("HOLD_position"))
+  , c( "Prediction","Réalité"= 2) 
+  ) -> scsc
+
+```
+
+```{r}
+
+  kable_styling(kable(CF_total$byClass),
+              full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"),latex_options = ("HOLD_position"))
+CF_total$overall[1]
+```
+
+
+Les résultats de cet arbre sont plus satisfaisants que l'arbre précédent. En effet, la sensibilité passe à `r matCon.prop[2,2]` et le taux de voitures prédites comme bons achats alors qu'elles sont de mauvais achats en réalité diminue par la même occasion en passant à `r matCon.prop[1,2]`% mais reste élevé tout de même.
+```{r}
+pred_rpart.caret.auc <- predict(rpart.caret.auc$finalModel, newdata = train_data[,-1], type='prob')
+data.frame(pred_model1 = pred_rpart.caret.auc[,1], obs = (pull(train_data, Is_Bad )=="Non")*1) %>%
+  ggplot()+aes(d=obs,m=pred_model1)+geom_roc() + style_roc() 
+
+
+```
+
+La courbe ROC est légérement améliorée mais on voit bien que la prédiction ne sera pas très bonne tout de même.
+
+```{r}
+pred <- prediction(pred_rpart.caret.auc[,1], (pull(train_data, Is_Bad)=="Oui")*1)
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+performance(pred, measure = "acc") %>% plot(col="red")
+```
+L'erreur globale augmente avec la taille de l'arbre. Ceci ne change pas par rapport à l'arbre précédent.
+
+```{r}
+performance(pred, measure = "prec") %>% plot(col="red")
+```
+Comme l'arbre précedent, la précision diminue jusqu'à un seuil puis augmente brusquement lorsque l'arbre est complet. Par conséquent, il est raisonnable de prendre un arbre élagué suffisement grand mais pas trop non plus afin d'avoir une erreur globale raisonnable et une bonne précision.
+
+En conclusion, cette arbre prédit beaucoup mieux les mauvais achats que l'arbre précédent mais il les prédit tout de même assez mal, en témoigne la sensibilité de `r matCon.prop[2,2]`. De ce fait, on choisira plus cet arbre afin de prédire la variable `Is_Bad`.
+
+
+
+### Sous-échantillonage
+
+```{r,include=F}
+prop<-round(prop.table(table(df_arbre$Is_Bad))*100,1)
+```
+
+On sait que nous avons un problème de tailles d'échantillons entre nos deux groupes : `prop[1]`% de nos données sont classées "Non" et `prop[2]`% sont classées "Oui".
+
+Nous avons pu observer que nos précédents modèles ont du mal à repérer les mauvais achats. Nous allons utiliser des techniques de sous-échantillonage afin de rééquilibrer la représentation de nos classes et ainsi potentiellement mieux repérer les mauvais achats.
+
+```{r}
+
+registerDoParallel(cores = detectCores() - 4)
+
+
+
+rpart.caret.under <- train(Is_Bad~., data = train_data, method="rpart", tuneGrid = rpartGrid, na.action = na.rpart, metric = "ROC",
+                            trControl = trainControl(method = "repeatedcv", repeats = 10, 
+                                                     summaryFunction = twoClassSummary, 
+                                                     classProbs = TRUE,
+                                                     sampling = "down") )
+
+stopImplicitCluster()
+
+confM<-confusionMatrix(data = predict(rpart.caret.under$finalModel, train_data[,-1], type='class'),
+                reference = pull(train_data, Is_Bad), 
+                mode = "everything", positive = "Oui")
+glob_under<-1-confM$overall[1]
+kable(addmargins(confM$table), caption = "Matrice de confusion") -> x
+
+add_header_above(
+  kable_styling(x,
+              full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"),latex_options = ("HOLD_position"))
+  , c("Prediction","Réalité" = 3)
+  )
+
+matCon.prop <- round(prop.table(confM$table, margin = 2)*100, 1)
+
+kable(matCon.prop ,  caption = "Proportion en ligne de la Matrice de confusion") -> x
+add_header_above(
+  kable_styling(x,
+              full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"),latex_options = ("HOLD_position"))
+  , c( "Prediction","Réalité"= 2)
+  )
+
+kable(confM$byClass) ->x
+kable_styling(x,full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"),latex_options = ("HOLD_position"))
+
+under_echan<-confM$byClass
+rpart.caret.under$bestTune
+
+```
+
+L'erreur globale est plus importante que les arbre précédents, par contre on repère beaucoup mieux les mauvais achats, la sensibilité étant la meilleure qu'on ait obtenu jusqu'ici. De plus on ne baisse pas trop la spécificité et l'erreur globale. 
+
+### Sur-échantillonage
+
+On va maintenant faire l'inverse et rééchantilloner les mauvais véhicules afin d'avoir la même taille que l'échantillon des bons véhicules.
+
+```{r}
+registerDoParallel(cores = detectCores() - 4)
+rpart.caret.over <- train(Is_Bad~., data = train_data, method="rpart", tuneGrid = rpartGrid, na.action = na.rpart, metric = "ROC",
+                           trControl = trainControl(method = "repeatedcv", repeats = 10, 
+                                                    summaryFunction = twoClassSummary, classProbs = TRUE,
+                                                    sampling = "up") )
+stopImplicitCluster()
+
+rpart.caret.over$bestTune
+confM<-confusionMatrix(data = predict(rpart.caret.over$finalModel, train_data[,-1], type='class'),
+                reference = pull(train_data, Is_Bad), 
+                mode = "everything", positive = "Oui")
+glob_over<-1-confM$overall[1]
+kable(addmargins(confM$table), caption = "Matrice de confusion") -> x
+add_header_above(
+  kable_styling(x,
+              full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"),latex_options = ("HOLD_position"))
+  , c("Prediction","Réalité" = 3)
+  )
+matCon.prop <- round(prop.table(confM$table, margin = 2)*100, 1)
+kable(matCon.prop ,  caption = "Proportion en ligne de la Matrice de confusion") -> x
+add_header_above(
+  kable_styling(x,
+              full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"),latex_options = ("HOLD_position"))
+  , c( "Prediction","Réalité"= 2)
+  )
+kable(confM$byClass) ->x
+kable_styling(x,full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"),latex_options = ("HOLD_position"))
+  
+over_echan<-confM$byClass
+```
+
+### Algorithme Smote
+
+Essayons avec un modèle de réequilibrage d'échantillon un peu plus complexe dans sa réalisation et potentiellement meilleur.
+
+```{r}
+library(DMwR)
+registerDoParallel(cores = detectCores() - 4)
+rpart.caret.smote <- train(Is_Bad~., data = train_data, method="rpart", tuneGrid = rpartGrid, na.action = na.rpart, metric = "ROC",
+                           trControl = trainControl(method = "repeatedcv", repeats = 10, 
+                                                    summaryFunction = twoClassSummary, classProbs = TRUE,
+                                                    sampling = "smote") )
+
+
+stopImplicitCluster()
+confM<-confusionMatrix(data = predict(rpart.caret.smote$finalModel, test_data[,-1], type='class'),
+                reference = pull(test_data, Is_Bad), 
+                mode = "everything", positive = "Oui")
+arbre_smote<-confM$byClass
+kable_styling(kable(arbre_smote),full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"),latex_options = ("HOLD_position"))
+global_smote<-1-confM$overall[1]
+```
+
+L'erreur globale est plus faible que dans les deux modèles de réechantillonage précédents mais on ne repère pas assez bien les mauvais véhicules.
+
+### Comparaison des différents arbres
+
+```{r}
+tab_comp<-cbind(arbre_elag,auc_mod,under_echan,over_echan,arbre_smote)
+error_glob<-c(glob_elag,glob_auc,glob_under,glob_over,global_smote)
+tab_comp<-rbind(tab_comp,error_glob)
+tab_comp<-round(tab_comp*100,2)
+kable_styling(kable(tab_comp),full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"),latex_options = ("HOLD_position"))
+```
+
+
+```{r}
+models <- list(caret_pruned_classic = rpart.caret,
+               caret_auc = rpart.caret.auc,
+               caret_under =rpart.caret.under,
+               caret_over = rpart.caret.over,
+               caret_smote = rpart.caret.smote)
+modelsPredictions <- lapply(models, FUN = function(l){ predict(l$finalModel, test_data[,-1],
+                                                               type='prob')[,1]})
+```
+
+```{r}
+mPred <- as.data.frame(modelsPredictions)
+```
+
+```{r}
+mPred %>% mutate( obs = (pull(test_data, Is_Bad)=="Non")*1) %>% 
+  pivot_longer(cols = 1:5, names_to ="method", values_to = "pred") %>%
+  ggplot()+aes(d=obs,m=pred,color=method)+geom_roc() + style_roc()
+```
+
+```{r}
+library(MLmetrics)
+mPred <- as.data.frame(lapply(models, FUN = function(l){ predict(l$finalModel, train_data[,-1], type='prob')[,1]}))
+
+lapply(as.data.frame((mPred>0.5)*1), FUN = ConfusionMatrix, y_true = pull(train_data,Is_Bad)=="Non")
+
+  
+```
+
+
+
+## Forêts aléatoires
+
+On décide donc de faire une forêt aléatoire sur les mêmes variables afin d'améliorer le modèle.
+
+Après analyse nous observons que l'erreur OBB ce stabilise aux alentours de 150 arbres. Nous choisissons donc ce seuil pour réaliser note forêt aléatoire. De plus après avoir réalisé plusieurs test nous fixons le paramètre MTRY à 10.  
+
+```{r}
+rf <- randomForest(Is_Bad~., data = train_data, method = "class",
+                 parms = list(split = "gini"), na.action = na.roughfix,
+                 keep.forest = TRUE, importance = TRUE, ntree = 150, mtry = 10)
+
+```
+
+```{r}
+varImpPlot(rf, main = "Random Forest", cex = 0.8)
+
+pred.rf <- predict(rf, newdata = test_data, type = "class" )
+
+```
+La variable `pas_defini` est celle qui est le plus importante pour la random forest. Bien que nous n'ayons aucune information sur cette modalité, on peut émettre l'hypothèse qu'un véhicule ayant des roues à nues est un véhicule à ne pas acheter. On peut aussi souligné l'importance des variables difference entre les côtes et coût du véhicules.
+
+```{r}
+
+confusionMatrix(pred.rf, test_data$Is_Bad, positive = "Oui") -> MC_rf
+
+```
+
+```{r}
+kable(addmargins(MC_rf$table), caption = "Matrice de confusion") -> x
+add_header_above(
+  kable_styling(x,
+              full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"),latex_options = ("HOLD_position"))
+  , c("Prediction","Réalité" = 3)
+  )
+```
+
+```{r}
+matCon.prop <- round(prop.table(MC_rf$table, margin = 2)*100, 1)
+kable(matCon.prop ,  caption = "Proportion en ligne de la Matrice de confusion") -> x
+add_header_above(
+  kable_styling(x,
+              full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"),latex_options = ("HOLD_position"))
+  , c( "Prediction","Réalité"= 2)
+  ) -> agdgd
+
+```
+
+```{r}
+  kable_styling(kable(MC_rf$byClass),
+              full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"),latex_options = ("HOLD_position"))
+MC_rf$overall[1]
+```
+
+On note une lègere baisse de la sensibilité par rapport aux arbres contrebalancé par une légère augmentation de la spécificité. Ceci n'est pas très interressant pour notre prédiction bien que l'erreur globale diminue.
+
+\newpage
+
+# Conclusion 
+
+Dans l'optique de notre analyse, des compromis sont nécessaires. Les premiers modèles LDA, QDA et KNN ne sont absolument pas adaptés à nos besoins. Ils renvoient chacun une erreur globale acceptable mais ils ne repèrent pas correctement les mauvais achats. Quand on optimise le seuil afin de "mieux" séparer les groupes l'erreur globale en patit trop. 
+
+Les modèles d'arbres générés sont beaucoup plus adaptés. Nous pouvons rajouter les variables qualitatives et ainsi gagner de l'information. L'arbre élagué optimal génère une erreur globale la plus faible. Elle repère très bien les bons achats et améliore le classement des mauvais achats. L'arbre élagué qui maximise l'aire sous la courbe ROC a lui aussi une erreur globale faible, moins bonne que l'arbre élagué optimal. Il classe mieux les mauvais achats(sensibilité égale à 0,25 contre 0.22), il est donc préféré à l'arbre élagué qui diminue le plus l'erreur globale.
+
+L'arbre qui pratique du sur-échantillonage renvoie une erreur globale plus élevée mais aussi une bien meilleure sensibilité. C'est le modèle qui classe le moins de mauvais achats en bons achats, et celui qui classe le mieux les mauvais achats. Il classe plus de bons achats en mauvais achats.
+
+L'arbre qui pratique du sous-échantillonage renvoie une erreur globale plus élevée que le sur-échantillonage mais aussi une sensibilité plus élevée. C'est le modèle qui classe le mieux les mauvais achats parmis tous les modèles précédents.
+
+La forêt aléatoire de 150 arbres génére une erreur globale très faible, mais aussi une sensibilité moins elevée, elle est moins intéressante dans l'optique de notre analyse.
+
+Nous avons cherché tout au long de notre analyse à réduire au maximum le classement des mauvais achats en bons achats. Il faut maintenant pratiquer un arbitrage. Quel est le meilleur modèle à choisir qui prédirait au mieux les mauvais achats sans trop mal prédire les bons achats?
+Dans cette optique nous sommes prêts à sacrifier l'erreur globale et pencherions davantage vers du sous-échantillonage ou du sur-échantillonage.
+Parmis ces deux modèles, nous prenons aussi en compte la taille et la complexité de l'arbre qui sont relativement similaires pour les deux arbres. 
+
+Par souci d'optimisation de la sensibilité nous choisirons tout de même l'arbre qui sous-échantillone au détriment des % d'erreur globale perdus, mais nous préférons estimer trop de mauvais véhicules qui sont de bons véhicules que l'inverse.
+
+Appliquons notre modèle final sur les données tests afin de voir sa performance.
+
+```{r}
+
+confM<-confusionMatrix(data = predict(rpart.caret.under$finalModel, test_data[,-1], type='class'),
+                reference = pull(test_data, Is_Bad), 
+                mode = "everything", positive = "Oui")
+kable(addmargins(confM$table), caption = "Matrice de confusion") -> x
+add_header_above(
+  kable_styling(x,
+              full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"),latex_options = ("HOLD_position"))
+  , c("Prediction","Réalité" = 3)
+  )
+matCon.prop <- round(prop.table(confM$table, margin = 2)*100, 1)
+kable(matCon.prop ,  caption = "Proportion en ligne de la Matrice de confusion") -> x
+add_header_above(
+  kable_styling(x,
+              full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"),latex_options = ("HOLD_position"))
+  , c( "Prediction","Réalité"= 2)
+  )
+kable(confM$byClass) ->x
+kable_styling(x,full_width = F, position = "center",bootstrap_options = c("striped", "hover", "condensed"),latex_options = ("HOLD_position"))
+glob_over<-1-confM$overall[1]
+```
+
+On a des résultats relativement satisfaisants : une erreur globale de `r round(glob_over*100,2)`%, une spécificité très correcte (on estime plutôt bien les
+mauvais véhicules) et une sensitivité qui ne diminue pas trop.
+
+

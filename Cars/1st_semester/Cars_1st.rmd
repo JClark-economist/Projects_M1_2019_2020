@@ -1,0 +1,598 @@
+---
+title: "Cars"
+author: "Jean Clark, Lilian Boissé et Théo De Sa Morais"
+output:
+  pdf_document:
+    df_print: kable
+    highlight: kate
+    number_sections: yes
+    toc: yes
+  html_document:
+    df_print: paged
+    toc: yes
+  prettydoc::html_pretty:
+    highlight: github
+    theme: cayman
+---
+# I- Présentation du document
+##  Les données
+
+```{r,echo=FALSE}
+library(knitr)
+knitr::opts_chunk$set(echo=FALSE,warning=F,message=F)
+```
+
+```{r,echo=FALSE,include=FALSE}
+df<-read.csv(file ="cars.csv",header = TRUE, sep= ",",na.strings = c("NULL","","NOT AVAIL"))
+df<-df[,-c(1,5,13,27,28,30)]
+names(df)<-(c("Is_Bad","Date_d_achat",	"Encheres"
+,"Age_du_vehicule","Fabrication","Modele","Trim","Sous_Marque","Couleur","Type_de_transmission","Type_de_roues","Kilometrage","Nationalite","Taille","Top_trois_cons_Americains","CVh_M_E_1",	"CVh_B_E_1",	"CVh_M_D_1",	"CVh_B_D_1"	,"CVh_M_E_2",	"CVh_B_E_2",	"CVh_M_D_2",	"CVh_B_D_2",	"Numero_de_l_acheteur",	"Etat",	"Ct_vhcl_au_momt_de_l_achat",	"Est_une_vente_en_ligne",	"Cout_de_la_garantie"))
+df$Est_une_vente_en_ligne<-as.factor(df$Est_une_vente_en_ligne)
+df$Is_Bad<-as.factor(df$Is_Bad)
+levels(df$Is_Bad)<-c("Non","Oui")
+levels(df$Est_une_vente_en_ligne)<-c("Non","Oui")
+levels(df$Type_de_transmission)<-c("AUTO","MANUAL","MANUAL")
+df$Age_du_vehicule <- as.factor(df$Age_du_vehicule)
+df$Numero_de_l_acheteur <- as.factor(df$Numero_de_l_acheteur)
+p<-ncol(df)
+df_sans0<-df[df$CVh_B_E_1>2,]
+df_sans0<-df_sans0[df_sans0$CVh_B_E_2>2,]
+FiltreQuanti<-NULL 
+for(i in 1:p){
+  FiltreQuanti<-c(FiltreQuanti,is.numeric(df_sans0[,i])) 
+}
+
+
+FiltreQuali<-NULL 
+for(i in 1:p){
+  FiltreQuali<-c(FiltreQuali,is.factor(df[,i])) 
+}
+```
+
+
+```{r,echo=FALSE,include=FALSE}
+library(missMDA)
+library(utf8)
+library(knitr)
+library(kableExtra)
+library(formattable)
+library(RColorBrewer)
+library(corrplot)
+library(data.table)
+library(stargazer)
+library(FactoMineR)
+library(factoextra)
+library(DT)
+library(ggplot2)
+library(ggpubr)
+library(ggsci)
+```
+
+Ce document présente les données sur la vente de voitures aux États-Unis, entre ventes aux enchères et ventes au détaillant. Chaque ligne correspond à un véhicule vendu aux enchères entre 2009 et 2010.
+
+**Structure de notre document :**
+
+Notre tableau de données contient 28 variables détaillées très brièvement :
+
+* **Mauvais_Achat** : facteur indiquant si le véhicule était un achat évitable ou non.
+
+* **Date_d_achat** :	date d'achat du véhicule.
+
+* **Encheres** : dans quelle enchère le véhicule a été vendu.
+
+* **Annee_du_vehicule** : année où le véhicule a été vendu pour la première fois.
+
+* **Age_du_vehicule** : âge du véhicule.
+
+* **Fabrication** : marque de fabrication du véhicule.
+
+* **Modele** : modèle du véhicule.
+
+* **Trim** : aménagements et/ou options du véhicule.
+
+* **Sous_Marque** :
+
+* **Couleur** : couleur du véhicule.
+
+* **Type_de_transmission** : type de transmission du véhicule, deux facteurs : automatique ou manuelle.
+
+* **Type_de_roues** : le type de roues sur le véhicule.
+
+* **Kilometrage** : kilométrage du véhicule au moment de la dernière vente.
+
+* **Nationalite** : nationalité du constructeur du véhicule.
+
+* **Taille** : taille du véhicule.
+
+* **Top_trois_cons_Americains** : facteur déterminant si le véhicule a été construit par l'un des géants américains suivant : Ford, Chrysler ou GM(General Motors).
+
+* **CVh_M_E_1** : cote du véhicule aux enchères au moment de l'achat si il est en moyen état.
+
+* **CVh_B_E_1** : cote du véhicule aux enchères au moment de l'achat si il est en bon état.
+
+* **CVh_M_D_1** : cote du véhicule au détaillant au moment de l'achat si il est en moyen état.
+
+* **CVh_B_D_1** : cote du véhicule au détaillant au moment de l'achat si il est en bon état.
+
+* **CVh_M_E_2** : cote du véhicule actuelle aux enchères si il est en moyen état.
+
+* **CVh_B_E_2** : cote du véhicule actuelle aux enchères si il est en bon état.
+
+* **CVh_M_D_2** : cote du véhicule actuelle au détaillant si il est en moyen état.
+
+* **CVh_B_D_2** : cote du véhicule actuelle au détaillant si il est en bon état.
+
+* **Numero_de_l_acheteur** 	
+
+* **Etat** : État d'origine de l'acheteur.
+
+* **Ct_vhcl_au_momt_de_l_achat** : coût du véhicule au moment de l'achat
+
+* **Est_une_vente_en_ligne** : facteur oui ou non.
+
+* **Cout_de_la_garantie**
+
+
+Nous avons décidé, par souci de redondance de l'information, de supprimer trois variables : l'ID du type de roues qui donnait la même information que le type de roues, l'ID du véhicule et enfin le code postal de l'acheteur qui est redondant avec l'État d'origine de l'acheteur.
+
+Les variables PRIMEUNIT et AUCGART ont été supprimées car trop d'informations sur ces variables sont manquantes.
+Les premières observations en regardant la structure de nos données seront sur l'âge des véhicules vendus qui ont tous moins de 9 ans ou 9 ans ce qui en font des véhicules relativement récents. Ce marché représenté par nos données est donc un marché de l'occasion mais récente, pas de véhicule de collection, pas de véhicule en mauvais état et/ou obsolète. Nous garderons cette observation en tête pour le restant de l'analyse.
+
+### Qualitatives
+
+Commençons par analyser nos données qualitatives.
+
+Les véhicules les plus vendus sont de fabrication **Chevrolet, Dodge, Ford et Chrysler**. Ces quatres marques totalisent à elles seules plus de **68% des ventes aux enchères aux États-Unis**. Quand aux modèles, ce sont encore une fois les modèles de ces marques dominantes qui sont les plus vendus avec tout de même une petite surprise, la **PT Cruiser** qui est construite par Chrysler est la voiture la plus vendue alors que Chrysler est seulement la quatrième marque la plus vendue aux États-Unis (voir Annexes Tables 1 et 2).
+
+
+On observe logiquement que **83,6% des véhicules sont d'origine Américaine**, mais il existe aussi un marché des voitures asiatiques. Les voitures européennes sont très rares sur le marché de la vente aux enchères aux États-Unis (voir Annexes Table 3).
+
+
+```{r,echo=FALSE,fig.align= "center",fig.height= 5, fig.width= 8}
+#A reflechir si on veut mettre 
+barplot(table(df$Age_du_vehicule), main= "Répartition des véhicules vendus \nselon leur âge", col = "lightblue",ylim=c(0,18000))
+text(c(0.25,1.25,2.3,3.8,5.05,5.95,7.3,8.75,9.9,11),table(df$Age_du_vehicule)+450,labels=paste(round((table(df$Age_du_vehicule))/nrow(df)*100,1),"%"),pos=4)
+```
+On voit ici que la plupart des véhicules ont été mis en circulation autour de l'année 2006 (voir Annexes Table 4).
+
+```{r,echo=FALSE,fig.align= "center",fig.height= 5, fig.width= 9.5}
+par(mar=c(3,8,3,3))
+barplot(sort(table(df$Couleur)),horiz=TRUE,las=1,width=0.5,space=1,main="Effectifs par couleur de la voiture",xlim=c(0,20000),col="lightblue")
+text(sort(table(df$Couleur)),(1:15)-0.25,labels=paste(round((sort(table(df$Couleur)))/nrow(df)*100,1),"%"),pos=4)
+```
+
+Les couleurs froides comme **le gris, le blanc et le bleu** semblent se vendre le plus, tandis que les véhicules de couleurs chaude et vive sont les moins représentés. On note aussi que les véhicules **de moyenne et grande taille** utilisant une boîte automatique sont les plus présents sur le marché des enchères de voitures (voir Annexes Tables 5 et 6).
+
+
+Ce ne sont pas des particuliers qui achètent les voitures aux enchères, **les concessionaires et revendeurs professionnels** sont les premiers consommateurs de véhicules aux enchères. On observe que les états où il y a le plus d'enchères sont les États dont la densité urbaine est moins importante commme **le Texas, l'Arizona ou la Floride** (voir Annexes Tables 6 et 7).  
+
+Les entreprises *MANHEIM* et *ADESA* dominent le marché de la vente de véhicules aux enchères aux États-Unis. 
+
+### I.1.B- Quantitatives
+
+
+La variable la plus corrélée avec le prix d'achat du véhicule est la cote d'un véhicule en moyen état vendu aux enchères au moment de l'achat. À l'inverse Le prix de vente du véhicule ne semble pas corrélé avec le kilométrage et le coup de la garantie.
+
+```{r,echo=FALSE,fig.align= "center",fig.height= 5, fig.width= 9.5}
+resume<-function(x){
+  res<-c(mean(x,na.rm = TRUE),sd(x,na.rm = TRUE),quantile(x,c(0,0.25,0.5,0.75,1),na.rm = TRUE))
+  names(res)<-c("Moyenne","Ecart-type","Minimum","Q1","Médiane","Q3","Maximum")
+  return(res)
+}
+```
+
+
+```{r,echo=FALSE,fig.align= "center",fig.height= 5, fig.width= 9.5}
+tab.resum<-sapply(df_sans0[c("CVh_M_E_1",	"CVh_B_E_1","CVh_M_D_1",	"CVh_B_D_1")],resume)
+kable_styling(kable(tab.resum,digits = 2),
+              position = "center",
+              bootstrap_options=c("stripped","hover","condensed"),
+              )
+            
+```
+              
+
+En moyenne la côte d'un véhicule pendant la période d'achat est plus haute chez un détaillant qu'aux enchères. Il semble donc plus intéressant pour un acheteur de s'orienter vers une enchère pour acquérir une nouvelle voiture.
+
+```{r,echo=FALSE,fig.align= "center",fig.height= 5, fig.width= 9.5}
+
+
+tab.resum<-sapply(df_sans0[c("CVh_M_E_2",	"CVh_B_E_2","CVh_M_D_2",	"CVh_B_D_2")],resume)
+kable_styling(kable(tab.resum,digits = 2),
+              position = "center",
+              bootstrap_options=c("stripped","hover","condensed"),
+              )
+```
+
+Il semblerait d'après les moyennes que les côtes des détaillants, pour une même voiture, gagnent plus de valeur avec le temps que celles des enchères.
+
+```{r,echo=FALSE,fig.align= "center",fig.height= 5, fig.width= 9.5}
+tab.resum<-sapply(df_sans0[c("Kilometrage","Ct_vhcl_au_momt_de_l_achat",	"Cout_de_la_garantie")],resume)
+kable_styling(kable(tab.resum,digits = 2),
+              position = "center",
+              bootstrap_options=c("stripped","hover","condensed"),
+              )
+```
+
+En moyenne le prix d'achat d'une voiture est plus grand que sa cote aux enchères. 
+Il faut vérifier si cette différence est significative. 
+ 
+
+Testons la cote du véhicule aux enchères au moment de l'achat contre la cote du véhicule aux enchères actuellement pour le même état de la voiture.
+```{r,echo=FALSE,fig.align= "center",fig.height= 5, fig.width= 9.5}
+par(mar=c(3,7,3,3))
+boxplot(df_sans0$CVh_M_E_1,df_sans0$CVh_M_E_2,df_sans0$CVh_B_E_1,df_sans0$CVh_B_E_2,names = c("CVh_M_E_1","CVh_M_E_2","CVh_B_E_1","CVh_B_E_2"),col = c("lightblue","lightblue","white","white"),horizontal = TRUE,las=1,cex=0.5,range = 3, main = "Cote aux enchères selon la période",xlab="Cote du véhicule en dollars")
+
+```
+
+
+commentaires a refaire 
+
+Testons la cote du véhicule chez un détaillant au moment de l'achat contre la cote du véhicule chez un détaillant actuellement pour le même état de la voiture.
+
+```{r,echo=FALSE,fig.align= "center",fig.height= 5, fig.width= 9.5}
+par(mar=c(3,7,3,3))
+boxplot(df_sans0$CVh_M_D_1,df_sans0$CVh_M_D_2,df_sans0$CVh_B_D_1,df_sans0$CVh_B_D_2,names = c("CVh_M_D_1","CVh_M_D_2","CVh_B_D_1","CVh_B_D_2"),col = c("lightblue","lightblue","white","white"),horizontal = TRUE,las=1,cex=0.5,range = 3, main = "Cote au détaillant selon la période",xlab="Cote du véhicule en dollars")
+
+```
+
+
+
+*Test de comparaison Kilometrage et Cout de la garantiee d'un Mauvais/Bon achat*
+```{r,echo=FALSE,fig.align= "center",fig.height= 5, fig.width= 9.5}
+
+moy.test<-function(x){
+  t<-t.test(x~ df_sans0$Is_Bad, alternative = "less")
+  output<-c(t$estimate,t$p.value)
+  names(output)<-c(names(t$estimate), "p-value")
+  return(output)
+}
+kable_styling(kable(sapply(df_sans0[,c(12,28)],moy.test)),
+              position = "center", latex_options = c("HOLD_position"),
+bootstrap_options=c("stripped","hover","condensed"),
+              )
+```
+
+La p-value de chacun de ces tests de comparaison des moyennes est proche de 0, ce qui indiquent que l'on rejette l'hypothese d'égalité des moyennes. En moyenne, les voitures identifiées comme bon achat ont un kilometrage et un cout de garantie plus faible que les voitures identifiées comme mauvais achat.
+
+*Test de comparaison Age et Cout du véhicule d'un Mauvais/Bon achat*
+```{r,echo=FALSE,fig.align= "center",fig.height= 5, fig.width= 9.5}
+moy.test2<-function(x){
+  t<-t.test(x~ df_sans0$Is_Bad, alternative = "greater")
+  output<-c(t$estimate,t$p.value)
+  names(output)<-c(names(t$estimate), "p-value")
+  return(output)
+}
+
+df_sans0$Age_du_vehicule <- as.numeric(df_sans0$Age_du_vehicule)
+kable_styling(kable(sapply(df_sans0[,c(4,26)],moy.test2)),
+              position = "center", latex_options = c("HOLD_position"),
+              bootstrap_options=c("stripped","hover","condensed"),
+              )       
+df_sans0$Age_du_vehicule <- as.factor(df_sans0$Age_du_vehicule)
+
+```
+
+
+La p-value du test comparant la moyenne des ages des vehicules dans le deux groupes est égale à 1. L'age du véhicule du groupe bon achat est donc en moyenne plus petit que celui du groupe mauvais achat.
+La p-value du test comparant le cout du vehicules est égale à 0. En moyenne, le cout d'achat d'un véhicule identifié comme bon achat est plus élevée que celu d'un vehicule identifié comme mauvais achat.
+
+
+### I.1.C- Axes d'analyses
+
+**Du point de vue d'un acheteur :**
+
+* Repérer les véhicules à éviter d'acheter
+
+* Repérer les types de véhicule selon les différentes enchères.
+
+* Au contraire repérer les véhicules qui prennent le plus de valeur par rapport à leur cote aux enchères.
+
+**Du point de vue des enchères :**
+
+* Identifier les acheteurs
+
+* Contrôler le niveau des cotes
+
+* Repérer les différents groupes de véhicules
+
+**Du point de vue d'un vendeur :**
+
+* Étudier la  différence entre les cotes du véhicule entre les détaillants et les enchères selon les périodes et les différentes caractéristiques du véhicule.
+
+* Étudier la différence entre la valeur du véhicule et les cotes selon les caractéristiques du véhicule(marque, modèle, type de roues...).
+
+# L'analyse
+
+## L'analyse par composante principale
+```{r,echo=FALSE,fig.align= "center",fig.height= 5, fig.width= 9.5}
+FiltreIndividu<-which(rowSums(is.na(df_sans0[,FiltreQuanti]))==0)
+M<-cor(df_sans0[FiltreIndividu,FiltreQuanti])
+corrplot.mixed(M,tl.cex=0.5)
+
+```
+
+```{r,echo=FALSE,fig.align= "center",fig.height= 5, fig.width= 9.5}
+dfACP <-df_sans0[FiltreIndividu,]
+resacp<-PCA(dfACP, graph = F, quali.sup = c(1,2,3,4,5,6,7,8,9,10,11,13,14,15,24,25,27))
+```
+
+### Inerties
+```{r,echo=FALSE,fig.align= "center",fig.height= 5, fig.width= 9.5}
+TabIne<-round(t(resacp$eig),1)
+rownames(TabIne)<-c("Inerties","Inerties relatives %","Inerties relatives cumulées")
+colnames(TabIne)<-1:nrow(resacp$eig)
+kable_styling(kable(TabIne),
+              position = "center",
+              bootstrap_options=c("stripped","hover","condensed"),
+              )
+```
+
+
+```{r,echo=FALSE,fig.align= "center",fig.height= 5, fig.width= 9.5}
+
+
+in1 <- fviz_screeplot(resacp, addlabels = TRUE, ylim = c(0, 80))+ xlab("Dimensions") + ylab("Pourcentage de variance expliquée") + ggtitle("Inertie")
+
+data.frame(resacp$eig[1:9,3]) -> resacpeig
+rownames(resacpeig) <- c("1", "2","3", "4","5", "6","7", "8","9")
+
+in2<- ggplot(resacpeig, aes(y = resacpeig[1:9,], x = rownames(resacpeig))) + geom_bar(position="stack", stat="identity", fill = "steelblue")+ theme_minimal() + ggtitle("Inertie cumulée") + xlab("Dimensions") + ylab("Pourcentage de variance expliquée")
+
+
+ggarrange(in1, in2)
+
+
+```
+
+L'étude des inerties nous conduit à sélectionner deux axes pour notre étude, qui à eux deux enregistrent 86% de l'inertie totale (74% pour l'axe 1 et 13% pour l'axe 2).
+
+
+
+### Etudes des variables 
+```{r,echo=FALSE,fig.align= "center",fig.height= 5, fig.width= 7.5}
+Qual <- round(resacp$var$cos2[,1:3],3)
+ContriVar <- round(resacp$var$contrib[,1:3],3)
+QualF1F2<-resacp$var$cos2[,1]+resacp$var$cos2[,2]
+QualF2F3<-resacp$var$cos2[,2]+resacp$var$cos2[,3]
+CoordVar<-round(resacp$var$coord[,1:3],3)
+
+Tab<-cbind(CoordVar, ContriVar, Qual, round(QualF1F2,3), round(QualF2F3,3))
+colnames(Tab)<-c("F1","F2","F3", "F1", "F2", "F3","F1", "F2", "F3","Qual(F1,F2)","Qual(F2,F3)")
+
+
+
+x <- kable_styling(kable(Tab,digits = 2),
+              position = "center",
+              bootstrap_options="basic",latex_options = "scale_down", font_size = 5)
+add_header_above( x,header = c(" " , "Coord. principales" = 3, "Contribution %" = 3, "Qualité de représentation" = 3, "Qualité.axes double"=2), font_size = 9)
+```
+
+```{r,echo=FALSE,fig.align= "center",fig.height= 5, fig.width= 9.5}
+axe1 <- fviz_contrib(resacp, choice = "var", axes = 1)
+axe2 <-fviz_contrib(resacp, choice = "var", axes = 2)
+
+ggarrange(axe1, axe2, ncol = 2)
+
+fviz_pca_var(resacp, col.var="contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE )
+```
+
+Axe 1 :
+Les variables qui contribuent le plus à la formation de cet axe sont les variables correspondant aux différentes côtes des véhicules. En effet, chacune de ces variables contribue positivement (environ 11%) à formation de cet axe. De plus, la variable *Cout Vehicule Au Moment de L Achat* (8,5% de contribution à l'axe 1) est très proche de contribution moyenne qui est d'environ 9%. Cette variable, était donnée qu'elle représente un prix comme les côtes, peut être intégré à l'interprétation de cet axe. De plus, toutes ces variables sont très bien représenté (supérieur à 0,9 pour toutes les côtes et environ 0,7 pour le *Cout Vehicule Au Moment de L Achat*). La corrélation entre toutes ces variables nous permettait d'avoir cette intuition.
+Cet axe représente le prix (via les côtes principalement) des voitures.
+
+Axe 2 :
+Cet axe représente beaucoup moins le nuage que l'axe 1 mais il reste tout de même intéressant à étudier. Les variables *kilométrages* et *Cout de la garantie* contribuent très majoritairement à la construction de cet axe (respectivement 45% et 49%). La qualité de représentation n'est pas excellente mais reste correct (environ 0,7 pour les deux variables).
+Cet axe représente donc le kilométrage et la garantie des véhicules.
+
+
+### Etudes des individus
+```{r,echo=FALSE,fig.align= "center",fig.height= 5, fig.width= 9.5}
+fviz_pca_ind(resacp,  col.ind = dfACP$Is_Bad, palette = c("Black", "Red") ,geom = c("point"), legend.title = "Mauvais Achat") 
+```
+
+Cette représentation du nuage de points des individus met en évidence les véhicules identifiés comme "lemon" ou non. Ce graphique ne permet pas d'observer une vraie corrélation entre les variables quantitatives et la variable *Mauvais Achat*. Cependant, la partie inférieure droite du graphique laisse penser que les voitures ayant une côte trop élevée, par rapport à la moyenne, conjugué à un coût de garantie et un kilométrage faible pourraient être de mauvais achat. Cette analyse doit toutefois être modérée étant donnés le peu d'individus concernés (une trentaine au maximum)
+
+```{r, fig.align= "center",fig.height= 5, fig.width= 9.5}
+a <- fviz_pca_ind(resacp,  col.ind = dfACP$Age_du_vehicule ,geom = c("point"),  legend.title = "Age du véhicule") 
+b <-fviz_pca_ind(resacp,  col.ind = dfACP$Nationalite ,geom = c("point"),  legend.title = "Nationalité")
+
+ggarrange(a,b)
+```
+
+Ces deux nouvelles représentations graphique du nuage de points des individus permet une analyse pour les compagnies d'enchère. En effet, l'habillage permet d'observer un rapport entre prix et âge du véhicule et, dans une moindre mesure, entre prix et nationalité du véhicule. Les véhicules les plus agé sont souvent les moins chers tandis que les plus récents ont un prix plus élevé. Par conséquent, pour gagner plus, les entreprises d'enchère doivent vendre des véhicules plutôt récent.
+Le deuxième graphique met en évidence un lien entre prix et nationalité du véhicule. Les voitures des top constructeurs asiatiques sont plus chères que celle des autres constructeurs asiatiques. Les voitures américaines sont en revanche dispersée dans les gammes de prix.
+Afc correspondante dans l'annexe.
+
+## L'analyse factorielle des composantes
+
+Nous essayons ici d'observer les caractéristiques classiques des ventes et ainsi de trouver celle qui s'éloignent de ces profils moyens.
+
+### L'acheteur
+
+La localisation de l'acheteur a t-il un lien avec l'achat de tel ou tel véhicule? 
+
+Les tableaux de contingence entre l'État d'origine de l'acheteur, la nationalité du véhicule, sa taille et son âge ayant été réalisés, des différences importantes ressortent. Les données suivantes seront analysées sans les ventes de véhicules neufs et sans les acheteurs du New Hampshire car leur inertie est bien trop importante et gène la visualisation. Ces données seront affichées dans les annexes.
+
+
+```{r,fig.align= "center",fig.height= 5, fig.width= 9.5}
+#type d'acheteurs
+df_sansNH<-df[df$Etat!="NH",]
+df_sansNH$Etat<-factor(df_sansNH$Etat,exclude = NULL)
+df33<-as.data.frame.matrix(table(df_sansNH$Etat,df_sansNH$Nationalite))
+df44<-as.data.frame.matrix(table(df_sansNH$Etat,df_sansNH$Taille))
+df_sansvhl_neuf<-df[df$Age_du_vehicule!="0",]
+df_sansvhl_neuf$Age_du_vehicule<-factor(df_sansvhl_neuf$Age_du_vehicule,exclude = NULL)
+df55<-as.data.frame.matrix(table(df_sansvhl_neuf$Etat,df_sansvhl_neuf$Age_du_vehicule))
+#type de véhicule
+df6<-as.data.frame.matrix(table(df$Top_trois_cons_Americains,df$Taille))#Interéssant
+df9<-as.data.frame.matrix(table(df$Top_trois_cons_Americains,df$Couleur))#très intéressant
+df10<- as.data.frame.matrix(table(df_sansvhl_neuf$Age_du_vehicule,df_sansvhl_neuf$Top_trois_cons_Americains))
+
+#type d'enchères
+df8<-as.data.frame.matrix(table(df_sansvhl_neuf$Encheres,df_sansvhl_neuf$Age_du_vehicule))#très intéressant
+df11<-as.data.frame.matrix(table(df$Encheres,df$Taille))
+df12<-as.data.frame.matrix(table(df$Encheres,df$Nationalite))
+```
+
+
+```{r,fig.align= "center",fig.height= 5, fig.width= 9.5}
+
+res.acm33<-CA(df33,graph = FALSE)
+
+poidsc<-round(res.acm33$call$marge.col,3)
+Qualc <- round(res.acm33$col$cos2[,1:3],3)
+ContriVarc <- round(res.acm33$col$contrib[,1:3],3)
+inertiec<-round(res.acm33$col$inertia,3)
+inertietotc<-sum(res.acm33$col$inertia)
+inertierec<-round(res.acm33$col$inertia/inertietotc*100,2)
+inertielc<-cbind(inertiec,inertierec)
+CoordVarc<-round(res.acm33$col$coord[,1:3],3)
+
+Tabc<-cbind(poidsc,CoordVarc,inertielc, ContriVarc, Qualc)
+colnames(Tabc)<-c("Poids","F1","F2","F3","Inertie","Inertie relative" ,"F1", "F2", "F3","F1", "F2", "F3")
+
+
+x <- kable_styling(kable(Tabc,digits = 2,caption = "Profils colonnes"),
+              position = "center",
+              bootstrap_options="basic",latex_options = c("scale_down","HOLD_position"), font_size = 9)
+add_header_above( x,header = c( "","", "Coord. principales" = 3, "Inertie"=2,"Contribution %" = 3, "Qualité de rep" = 3), font_size = 10, bold = T)
+```
+
+
+
+Les tableaux pour les analyses suivantes seront mis en annexes.
+```{r,fig.align= "center",fig.height= 5, fig.width= 9.5}
+res.acm44<-CA(df44,graph = FALSE)
+res.acm55<-CA(df55,graph = FALSE)
+fviz_ca_biplot(res.acm33,repel = TRUE,arrow = c(FALSE, TRUE),title = "État de l'acheteur/nationalité du véhicule")
+fviz_ca_biplot(res.acm44,repel = TRUE,arrow = c(FALSE, FALSE),title = "État d'origine de l'acheteur/Taille du véhicule")
+
+fviz_ca_biplot(res.acm55,repel = TRUE,arrow = c(FALSE, FALSE),title = "État de l'acheteur/âge du vehicule")
+```
+Cette première analyse nous montre que les véhicules achetés par des acheteurs des États du Massaschussets, Nevada et Utah s'éloignent de la même façon du profil moyen que les véhicules Top Line Asian. Il semblerait que s'éloigner vers la droite de l'axe c'est retrouver des profils de véhicules asiatiques.
+
+Dans le second graphique, les profils qui s'éloigne le plus de l'axe tels que Miami et Oklahoma sont des profils avec très peu d'effectifs. Mais ils sont très largement associés aux tailles de véhicules médium.
+
+Dans le troisième graphique, les acheteurs venant d'Oklahoma et New Hampshire s'éloignent de la même façon que les véhicules neufs. Le reste n'est pas clair, mais on peut discerner une dynamique vers le haut, à gauche de l'éloignement du profil moyen selo l'âge du véhicule.  
+
+### Le vendeur
+
+Quel type de véhicule peut-on trouver selon tel ou tel constructeur? 
+
+
+```{r,fig.align= "center",fig.height= 5, fig.width= 9.5}
+res.acm9<-CA(df9,graph = FALSE)
+fz1<-fviz_ca_biplot(res.acm9,repel = TRUE,arrow = c(TRUE,FALSE ),title = "Couleur/constructeur")
+res.acm10<-CA(df10,graph = FALSE)
+fz2<-fviz_ca_biplot(res.acm10,repel = TRUE,arrow = c(FALSE,TRUE),title = "Âge du véhicule/constructeur")
+ggarrange(fz1,fz2)
+```
+
+Le constructeur Ford s'éloigne de la même façon que les véhicules les plus vieux du profil moyen, les occurences de véhicules plus agés sont plus importantes chez le constructeur Ford que chez le profil moyen. il semblerait de la même façon que véhicules Chrysler et véhicules âgés s'éloignent de la même façon.
+
+```{r,fig.align= "center",fig.height= 5, fig.width= 9.5}
+#Type de véhicule
+res.acm6<-CA(df6,graph = FALSE)
+fv1<-fviz_ca_biplot(res.acm6,repel = FALSE,arrow = c(TRUE, FALSE),title = "Constructeur du véhicule/taille du véhicule")
+fv2<-fviz_screeplot(res.acm6, addlabels = TRUE, ylim = c(0, 85))+ xlab("Dimensions") + ylab("Pourcentage de variance expliquée") + ggtitle("Inertie")
+ggarrange(fv1,fv2)
+fviz_ca_biplot(res.acm6,axes = c(2,3),repel = FALSE,arrow = c(TRUE, FALSE),title = "Constructeur du véhicule/taille du véhicule")
+```
+### Les enchères
+
+Quel type de véhicule se trouve plus fréquemment chez tel ou tel enchère? 
+```{r,fig.align= "center",fig.height= 5, fig.width= 9.5}
+res.acm8<-CA(df8,graph = FALSE)
+fz3<-fviz_ca_biplot(res.acm8,repel = TRUE,arrow = c(TRUE, FALSE),title = "Enchères de la vente/Âge du véhicule")
+res.acm12<-CA(df12,graph = FALSE)
+fz4<-fviz_ca_biplot(res.acm12,arrow = c(TRUE, FALSE),title = "Enchères de la vente/Nationalité du véhicule")
+ggarrange(fz3,fz4)
+```
+
+```{r,fig.align= "center",fig.height= 5, fig.width= 9.5}
+res.acm11<-CA(df11,graph = FALSE)
+fviz_ca_biplot(res.acm11,repel = TRUE,arrow = c(TRUE, FALSE),title = "Enchères de la vente/Taille du véhicule")
+```
+
+
+
+
+
+
+
+
+
+### Analyse des correspondances multiples
+
+
+
+
+```{r,include=FALSE,fig.align= "center",fig.height= 5, fig.width= 9.5}
+
+df_sans0[FiltreIndividu,] -> ech2
+
+autreFiltre <- which(rowSums(is.na(ech2[,c(12,13)]))==0)
+ech2 <- ech2[autreFiltre,]
+
+ech2 <- ech2[sample(1:nrow(ech2),10000),]
+
+
+
+```
+
+
+```{r,fig.align= "center",fig.height= 5, fig.width= 9.5}
+ech2 <- ech2[,-c(16:23,12,28)]
+ech2$Ct_vhcl_au_momt_de_l_achat<- cut(ech2$Ct_vhcl_au_momt_de_l_achat, breaks = quantile(ech2$Ct_vhcl_au_momt_de_l_achat, seq(0,1,0.2)),include.lowest=TRUE)
+ech2$Ct_vhcl_au_momt_de_l_achat<- as.factor(ech2$Ct_vhcl_au_momt_de_l_achat)
+
+levels(ech2$Ct_vhcl_au_momt_de_l_achat)<- c("Tres Faible","Faible","Moyen", "Fort", "Tres Fort")
+
+ech2<- ech2[ech2$Nationalite!="OTHER",]
+ech2$Nationalite <- factor(ech2$Nationalite, exclude = c(NULL, NA))
+ech2 <- ech2[ech2$Age_du_vehicule!="0",]
+ech2$Age_du_vehicule<- factor(ech2$Age_du_vehicule, exclude = c(NULL, NA))
+
+
+```
+
+```{r,fig.align= "center",fig.height= 5, fig.width= 9.5}
+resACMb <- MCA(ech2[, c(4,12,17)], graph = F)
+fviz_screeplot (resACMb, addlabels = TRUE, ylim = c (0, 45))
+
+HCPC(resACMb, nb.clust = 3, graph = F) -> reshcpc
+```
+Nous avons réalisé une ACM sur les variables coûts du véhicule, âge du véhicule et nationalité du véhicule. Malheureusement nos ordinateurs ne nous permettant pas de réaliser unclustering sur l'ensemble des individus, nous avons donc pris un échantillon de 10 000 individus aléatoirement tiré au sein de notre base de données. 
+
+
+```{r}
+fviz_mca_biplot(resACMb, geom.ind = "point")
+```
+
+
+
+En observant le nuage des variables on constate que le prix semble corrélé avec l'âge du véhicule en effet plus on se trouve à droite de l'axe 1 plus l'âge des véhicules augmente et plus son prix diminue. À l'inverse plus on se trouve à gauche de l'axe 2 plus le prix augmenter et plus l'âge diminue. De plus, les voitures appartenant à la classe "Top line asian" semblent corrélées avec des prix très fort alors que la classe de voitures "Other asian" a l'air d'être corrélé aux prix faibles.
+
+
+
+```{r,fig.align= "center",fig.height= 5, fig.width= 9.5}
+fviz_cluster(reshcpc, geom = "point")
+```
+
+Bien que nous n'ayons pas réalisé le clustering sur l'ensemble des individus il semblerait que trois groupes d'individus se dégagent. 
+
+
+
+
+
+
+
+
+
+
+
+
+
