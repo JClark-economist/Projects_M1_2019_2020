@@ -1,0 +1,1105 @@
+---
+title: "HRS"
+author: "Jean Clark"
+date: \today
+output:
+  pdf_document:
+    df_print: kable
+    highlight: kate
+    number_sections: yes
+    toc: yes
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: false  
+    highlight: "default"
+    theme: "yeti"
+    df_print: paged
+    fontsize: 10pt
+  prettydoc::html_pretty:
+    highlight: github
+    theme: cayman
+---
+
+
+```{r,echo=FALSE}
+library(knitr)
+knitr::opts_chunk$set(echo=FALSE,warning=F,message=F,fig.align= "center",fig.height= 5, fig.width= 8.5)
+```
+```{r}
+library(mosaic)
+library(lmtest)
+library(stargazer)
+library(popbio)
+library(boot)
+library(ROCR)
+library(ISLR)
+library(MASS)
+library(missMDA)
+library(utf8)
+library(knitr)
+library(kableExtra)
+library(formattable)
+library(RColorBrewer)
+library(corrplot)
+library(data.table)
+library(DT)
+library(ggplot2)
+library(ggpubr)
+library(ggsci)
+library(xtable)
+library(dplyr)
+library(gridExtra)
+library(car)
+library(ResourceSelection)
+library(DescTools)
+library(ROCR)
+library(Metrics)
+```
+
+\newpage
+
+# Descriptives statistics
+
+This database contains information on the individuals that have subscribed to a private insurance (1) or a public insurance (0). The age, ethnicity, sex, level of education (years spent in school in total), status (married or not), health status, intensity of a possible chronic disease, the number of limitations medicaly imposed on daily activities, the retirement status, the retirement status of their spouse and the household income are represented.
+
+
+
+```{r}
+df<-read.csv(file="HRS.csv",header = TRUE,sep = ",")
+
+```
+
+```{r}
+df<-df[,-c(1,2)]
+
+kable_styling(kable(head(df[,1:11]),digits = 2,booktabs=T,caption = "Data"),
+              position = "center",
+              bootstrap_options=c("stripped","hover","condensed"),latex_options = "HOLD_position"
+              )
+kable_styling(kable(head(df[,12:18]),digits = 2,booktabs=T),
+              position = "center",
+              bootstrap_options=c("stripped","hover","condensed"),latex_options = "HOLD_position"
+              )
+```
+
+
+
+We can already make a few comments on that database:
+
+  * For the variable $hhincome$, we can't precisely estimate the income of the individual because of other potential incomes in the household. Therefore, we have to be careful when we will make assumptions with that variable.
+  
+  * $hstatusg$ is nearly the same variable as all the binary variables showing the health status, when $hstatusg$ is equal to 1, either $excel, vegood$ or $good$ are equal to 1, when $hstatusg$ is equal to 0, either $fair$ or $poor$ are equal to 1.
+  
+  * We may have some issues with the $sretire$ variable as it doesn't make any difference between someone that has a working spouse and someone who is single. 
+
+```{r}
+df$log_income<-log(df$hhincome+1)
+```
+
+
+
+
+
+
+## Quantitative variables
+
+```{r}
+resume_quanti<-function(x){
+  res<-c(mean(x,na.rm = TRUE),sd(x,na.rm = TRUE),quantile(x,c(0,0.25,0.5,0.75,1),na.rm = TRUE))
+  names(res)<-c("Mean","Sd","Minimum","Q1","Median","Q3","Maximum")
+  return(res)
+}
+tab.resum<-sapply(df[,c("age","adl","chronic"	,"educyear",	"hhincome")],resume_quanti)
+kable_styling(kable(tab.resum,digits = 2,booktabs=T,caption = "Summary: Quantitative variables"),
+              position = "center",
+              bootstrap_options=c("stripped","hover","condensed"),latex_options = "HOLD_position"
+              )
+```
+
+
+We can see that the variable "age" doesn't vary to much, all the people represented in that database are quite old. The minimum being 52 and the maximum being 86 we can safely say that they are near retirement or retired.
+
+On the other hand the household income varies a lot from individual to individual. 75% of individuals have a household income below 52.8 thousand dollars, the top 25% have a household income between 52.8 thousand dollars and 1312.12 thousand dollars! To linearise this relationship, we have added a variable which is the Neperian Logarithm of the household income. 
+
+### Comparison (ins=1 or ins=0)
+
+```{r}
+df_boxplot<-df
+df_boxplot$ins<-as.factor(df_boxplot$ins)
+gg1<-ggplot(df_boxplot,aes(ins,age))+geom_violin(draw_quantiles = c( 0.5),aes(fill=ins))
+gg2<-ggplot(df_boxplot,aes(ins,hhincome))+geom_violin(draw_quantiles = c(0.5),aes(fill=ins))
+gg4<-ggplot(df_boxplot,aes(ins,log_income))+geom_violin(draw_quantiles = c( 0.5),aes(fill=ins))
+gg3<-ggplot(df_boxplot,aes(ins,educyear))+geom_violin(draw_quantiles = c(0.5),aes(fill=ins))
+gg5<-ggplot(df_boxplot,aes(ins,adl))+geom_violin(draw_quantiles = c(0.5),aes(fill=ins))
+gg6<-ggplot(df_boxplot,aes(ins,chronic))+geom_violin(draw_quantiles = c(0.5),aes(fill=ins))
+
+ggarrange(gg2,gg4,gg5,gg3,gg1,gg6, ncol = 3,nrow = 2)
+```
+
+We can see that differences between the two groups are minimal. The household income and the number of years spent in school are higher for the insured with private insurance than the others.
+
+
+## Qualitative variables
+
+The majority of the individuals on this database (variables taken individualy) are white (82%), male (52%), married (73%), retired (62%), not insured with private insurance (61%) and healthy (70%).
+
+```{r,echo=F,include=F}
+str(df)
+summary(df)
+```
+
+```{r}
+resume_quali_bin<-function(x){
+  res<-c(count(x==0),count(x==1),1-mean(x,na.rm = TRUE),mean(x,na.rm = TRUE))
+  names(res)<-c("0","1","Frequency 0", "Frequency 1")
+  return(res)
+}
+tab.resum<-sapply(df[,c(2,3,4,6,14,15,17,18)],resume_quali_bin)
+kable_styling(kable(tab.resum,digits = 2,booktabs=T,caption = "Summary: Binary variables"),
+              position = "center",
+              bootstrap_options=c("stripped","hover","condensed"),latex_options = "HOLD_position"
+              )
+
+tab.resum<-sapply(df[,c(7,8,9,10,11)],resume_quali_bin)
+kable_styling(kable(tab.resum,digits = 2,booktabs=T),
+              position = "center",
+              bootstrap_options=c("stripped","hover","condensed"),latex_options = "HOLD_position"
+              )
+```
+
+
+### Comparison
+
+We are going to compare the differences between the two groups by comparing how the proportions might vary depending on its affiliation.
+
+```{r}
+df_is_ins<-df[df$ins==1,]
+df_is_not_ins<-df[df$ins==0,]
+
+resume_quali_bin<-function(x){
+  res<-c(1-mean(x,na.rm = TRUE),mean(x,na.rm = TRUE))
+  names(res)<-c("Frequency 0", "Frequency 1")
+  return(res)
+}
+tab.resum<-sapply(df_is_ins[,c(2,3,4,6,14,15,18)],resume_quali_bin)
+row.names(tab.resum)<-c("Is ins 0", "Is ins 1")
+tab.resum1<-sapply(df_is_not_ins[,c(2,3,4,6,14,15,18)],resume_quali_bin)
+row.names(tab.resum1)<-c("Is not ins 0", "Is not ins 1")
+tab.resum<-rbind(tab.resum1,tab.resum)
+kable_styling(kable(tab.resum,digits = 2,booktabs=T),
+              position = "center",
+              bootstrap_options=c("stripped","hover","condensed"),latex_options = "HOLD_position"
+              )
+```
+
+There are even less hispanics represented in the insured group than in the other group, there are more whites represented in the insured group than in the other group. There are less women represented in the insured group than the other group which means that men are more insured than women. There are relatively more married individuals insured than singles. 
+Those with private insurance are relatively healthier than those without.
+```{r}
+tab.resum<-sapply(df_is_ins[,c(7,8,9,10,11)],resume_quali_bin)
+row.names(tab.resum)<-c("Is ins 0", "Is ins 1")
+tab.resum1<-sapply(df_is_not_ins[,c(7,8,9,10,11)],resume_quali_bin)
+row.names(tab.resum1)<-c("Is not ins 0", "Is not ins 1")
+tab.resum<-rbind(tab.resum1,tab.resum)
+kable_styling(kable(tab.resum,digits = 2,booktabs=T),
+              position = "center",
+              bootstrap_options=c("stripped","hover","condensed"),latex_options = "HOLD_position"
+              )
+```
+
+\newpage
+
+## Correlation
+
+Let's check if there is any correlation between our quantitative variables.
+
+```{r}
+M<-cor(df[,c(1,5,12,13,16,19)])
+col <- colorRampPalette(c("#BB4444", "#EE9988", "#FFFFFF", "#77AADD", "#4477AA"))
+p.mat <- cor.mtest(df[,c(1,5,12,13,16,19)])$p
+corrplot(M, method = "color", col = col(200),
+         type = "upper", order = "hclust", number.cex = .7,tl.cex=0.7,
+         addCoef.col = "black", # Add coefficient of correlation
+         tl.col = "black", tl.srt = 50, # Text label color and rotation
+         # Combine with significance
+         p.mat = p.mat, sig.level = 0.01,
+         # hide correlation coefficient on the principal diagonal
+         diag = FALSE)
+```
+
+All the correlation coefficients are significant except for $age$ and $educyear$. The number of years spent in school and the household income are positively correlated. These variables are both negatively correlated with the intensity of a possible chronic disease and the number of limitations on daily activities. By the way, $chronic$ and $adl$ are strongly positively correlated.
+
+\newpage
+
+# Model : general model and log-likelihood function
+
+As we want to predict the probability of an individual being subscribed to a private insurance or not, we may use two types of general models and see which one works best. $Ins_i = 1$ with probability $Pi$, 0 with probability $1-Pi$.
+
+In most applications of binary response models, the primary goal is to explain the effects of the exogenous variables on the response probability $Prob(Ins_i =1|Xi)$. 
+
+We let $Pi = Prob(Ins_i =1|Xi)=F(Xi)$.
+
+The logit and probit models are some of the most effective to predict a binary response.  
+
+  * The logit model: $F(Xi\beta)=\Lambda(Xi\beta)=\frac{exp(Xi\beta)}{1 + exp(Xi\beta)}$
+
+  * The probit model: $F(Xi\beta)=\phi(Xi\beta)=\int_{-\infty}^{Xi\beta} \frac{1}{\sqrt{2\pi}} exp(\frac{-z^2}{2})$
+
+  * With a log likelihood function equal to : $ln L(Y,\beta)=\sum_{i:Y_i=1}Y_iln [F(X_i\beta)]+\sum_{i:Y_i=0}ln[1-F(X_i\beta)]$.
+  
+We want an estimation of the log-likelihood that is as close as possible to zero, the closer to 0 the better the prediction as the parameters are correctly estimated.
+
+We already have a few ideas on what kind of variables we want to use in our models.
+First we will try with a full model with all possible variables and then take out one by one any variable that is insignificant until we have the best model:
+
+ * $logit(ins_i) = \alpha+\beta _1 age_i + \beta _2hisp_i + \beta _3white_i + \beta _4female_i + \beta _5educyear_i + \beta _6married_i + \beta _7excel_i + \beta _1vegood_i + \beta _1good_i + \beta _1fair_i + \beta _1poor_i + \beta _1chronic_i + \beta _1adl_i + \beta _1retir_i + \beta _1sretire_i + \beta _1hhincome_i + \beta _1hstatusg_i+\mu _i$
+
+$hstatus$ is pretty much the same variable as $excel, vegood, good, fair, poor$ as when $hstatus$ is equal to 1 it means that the individual is healthy, the opposite being when it's equal to 0. We can maybe have a second model where we take $hstatus$ or $excel, vegood, good, fair, poor$ out as we might have some colinearity issues.
+
+
+We also might want to consider a model with the $log_income$ variable instead of $hhincome$ for reasons previously mentionned.
+Let's take a look at the difference between the two models if we decide to use only the household income and the log_ household income as exogenous variables.
+
+
+
+```{r}
+glm2bisl = glm(ins~hhincome, data=df, family=binomial(link=logit))
+glm2bisp = glm(ins~hhincome, data=df, family=binomial(link=probit))
+plot(jitter(ins,0.5) ~ hhincome, data=df,
+     ylab='Private insurance?', xlab='Revenue',main="Household income vs log household income",
+     pch=19, col=rgb(0,0,0,0.2), las=1)
+# Now add the fitted vaues from the logit model
+points(fitted(glm2bisl)~hhincome,data=df, col='blue', pch=19)
+# Now add the fitted vaues from the logit model
+points(fitted(glm2bisp)~hhincome,data=df, col='red', pch=19)
+legend(1000, 0.5, legend=c("Logit", "Probit"),
+       col=c("blue", "red"), lty=1:2, cex=0.8)
+
+
+glm2l = glm(ins~log_income, data=df, family=binomial(link=logit))
+glm2p = glm(ins~log_income, data=df, family=binomial(link=probit))
+plot(jitter(ins,0.5) ~ log_income, data=df,
+     ylab='Private insurance?', xlab='Log Revenue',
+     pch=19, col=rgb(0,0,0,0.2), las=1)
+# Now add the fitted vaues from the logit model
+points(fitted(glm2l)~log_income,data=df, col='blue', pch=19)
+points(fitted(glm2p)~log_income,data=df, col='red', pch=19)
+legend(6, 0.5, legend=c("Logit", "Probit"),
+       col=c("blue", "red"), lty=1:2, cex=0.8)
+```
+
+\newpage
+
+```{r,results='asis'}
+
+stargazer(glm2bisl,glm2bisp,glm2l,glm2p,type="latex",title="Models",table.placement="H")
+```
+
+The variable $log_income$ gives some much better results, we will use it from now on.
+
+Let's start looking at these first models.
+
+\newpage
+
+# Estimation ((Logit, Probit)
+
+We will choose our models by using three measures. The Log-likelihood estimate, the Akaike Information Criterion (AIC) and the MacFadden R-Squared.
+
+  * The AIC takes into account the number of variables used for our models which makes it a good measure to compare models ($AIC=2lnL+2k$).
+  
+  * The MacFadden R-squared doesn't give much information, but we can compare them between models as a MacFadden R-squared equal to one means that the log-likelihood is equal to 0. $R^2=1-\frac{lnL(Y,B_{est})}{lnL(Y_{tot})}$. 
+
+For better results we will use the adjusted MacFadden so we can take into account the number of variables.
+For the Log-likelihood estimate and the AIC, the closer these values are to zero, the better the model.
+
+
+Estimated coefficients do not quantify the influence of the variables on the probability that the $ins$ variable takes on the value one. 
+Estimated coefficients are parameters of the latent model. 
+
+## Logit
+
+```{r,results='asis'}
+glm3 = glm(ins~age+ hisp + white+ female + educyear + married + excel + vegood + good + fair + poor + chronic + adl + retire + sretire + log_income, data=df, family=binomial(link=logit))
+glm4 = glm(ins~age+ hisp + white + female + educyear + married + chronic + adl + retire + sretire + log_income, data=df, family=binomial(link=logit))
+
+glm5 = glm(ins~age+ hisp + white  + female + educyear + married + chronic + adl + retire + log_income+hstatusg, data=df, family=binomial(link=logit))
+
+stargazer(glm3,glm4,glm5,type="latex",title="Models",table.placement="H")
+```
+
+\newpage
+
+```{r,results='asis'}
+glm6 = glm(ins~age+ hisp + educyear + chronic + adl + retire + log_income+hstatusg, data=df, family=binomial(link=logit))
+
+glm7 = glm(ins~age+ hisp + educyear + chronic + adl + retire + log_income, data=df, family=binomial(link=logit))
+
+glm8 = glm(ins~ hisp + educyear +chronic+ adl +retire+ log_income, data=df, family=binomial(link=logit))
+
+stargazer(glm6,glm7,glm8,type="latex",title="Models",table.placement="H")
+```
+
+The last five models give some similar log likelihood and AIC results. They are the best models so far. Only the last one have all its variables significant. 
+
+Let's think about these models, $hisp$ is always a significant variable. It would mean that the probability of being insured decreases if you are hispanic, in my opinion it is a too simple to assume that your ethnical affiliation would impact that much on the fact that you have a private insurance or not. 
+On the other hand, it seems a bit odd that the variable $married$ isn't significant in all the best models so far as the household income may directly depend on the fact that the individual is married or not.
+
+For both variables we can try to put them in interaction with $log_income$, it seems more logical that $hisp$ would have so much impact on the model if $hisp$ and the household income would be linked, meaning that hispanic people have a smaller household income as white people and that it affects the probability of being insured or not.
+
+```{r,results='asis'}
+glm9 = glm(ins~ age+hisp +married+ educyear + chronic + adl + retire + log_income+log_income*married+log_income*hisp+hstatusg, data=df, family=binomial(link=logit))
+glm10 = glm(ins~ age+hisp +married+ educyear + chronic + adl + retire + log_income+log_income*hisp+hstatusg, data=df, family=binomial(link=logit))
+glm11 = glm(ins~ age+hisp +married+ educyear + chronic + adl + retire + log_income+log_income*married+hstatusg, data=df, family=binomial(link=logit))
+stargazer(glm10,glm11,glm9,type="latex",title="Models",table.placement="H")
+```
+
+The last model with both variables in interaction gives the best results. The $hisp$ variable in interaction with the $logincome$ gives a positive coefficient. The only issue with that is that the variable $hstatusg$ isn't significant. Its p-value is equal to 0.14 which is quite high. I would suggest testing our model without that variable.
+
+```{r,results='asis'}
+glm9_bis = glm(ins~ age+hisp +married+ educyear + chronic + adl + retire + log_income+log_income*married+log_income*hisp, data=df, family=binomial(link=logit))
+glm_final = glm(ins~ hisp +married+ educyear + chronic + adl + retire + log_income+log_income*married+log_income*hisp, data=df, family=binomial(link=logit))
+stargazer(glm9_bis,glm_final,type="latex",title="Models",table.placement="H")
+```
+
+
+
+```{r}
+R0<-PseudoR2(glm10, which = "McFaddenAdj")
+R1<-PseudoR2(glm11, which = "McFaddenAdj")
+R2<-PseudoR2(glm9, which = "McFaddenAdj")
+R3<-PseudoR2(glm9_bis, which = "McFaddenAdj")
+R4<-PseudoR2(glm_final, which = "McFaddenAdj")
+
+rall<-c(R0,R1,R2,R3,R4)
+names(rall)<-c("1","2","3","4","5")
+kable_styling(kable(rall,digits = 3,booktabs=T,caption = "MacFadden R-squared adjusted for the 5 last models"),
+              position = "center",latex_options = "HOLD_position",
+              bootstrap_options=c("stripped","hover","condensed"),
+              )
+
+```
+
+For the last 5 models, the MacFadden R-squared ajusted are very similar.
+When you take $hstatusg$ out, $age$ becomes insignificant. Our final logit model is then :
+
+  * $logit(ins_i) = \alpha+\beta _1hisp_i + \beta _2educyear_i + \beta _3married_i + \beta _4chronic_i + \beta _5adl_i + \beta _6retir_i  + \beta _7logincome_i + \beta _8 (logincome_i*married_i)+\beta _9(logincome_i*hisp_i)+\mu _i$
+  
+
+
+
+## Probit
+
+We build the same modelsas before and it gives some different results, the best probit model contains the following variables: $age$, $hisp$,$educyear, chronic, adl, retire, logincome$ and $hstatusg$.
+
+We can try to put the same variables as before in interaction.
+
+```{r,results='asis'}
+p6 = glm(ins~age+ hisp + educyear + chronic + adl + retire + log_income+hstatusg, data=df, family=binomial(link=probit))
+
+p7= glm(ins~age+ hisp + educyear + chronic + adl + retire + log_income, data=df, family=binomial(link=probit))
+
+p8 = glm(ins~ hisp + educyear + chronic + adl + retire + log_income, data=df, family=binomial(link=probit))
+
+p9 = glm(ins~ age+hisp +married+ educyear + chronic + adl + retire + log_income+log_income*married+log_income*hisp+hstatusg, data=df, family=binomial(link=probit))
+p10 = glm(ins~ age+hisp +married+ educyear + chronic + adl + retire + log_income+log_income*hisp+hstatusg, data=df, family=binomial(link=probit))
+p11 = glm(ins~ age+hisp +married+ educyear + chronic + adl + retire + log_income+log_income*married+hstatusg, data=df, family=binomial(link=probit))
+stargazer(p6,p7,p8,p11,p10,p9,type="latex",title="Models",table.placement="H")
+```
+
+The models with variables interacting are much better than those without, but, same as the logit model, $hstatusg$ becomes insignificant. 
+
+```{r,results='asis'}
+p9_bis = glm(ins~ age+hisp +married+ educyear + chronic + adl + retire + log_income+log_income*married+log_income*hisp, data=df, family=binomial(link=probit))
+p_final = glm(ins~ hisp +married+ educyear + chronic + adl + retire + log_income+log_income*married+log_income*hisp, data=df, family=binomial(link=probit))
+stargazer(p9_bis,p_final,type="latex",title="Models",table.placement="H")
+```
+
+```{r}
+R0<-PseudoR2(p10, which = "McFaddenAdj")
+R1<-PseudoR2(p11, which = "McFaddenAdj")
+R2<-PseudoR2(p9, which = "McFaddenAdj")
+R3<-PseudoR2(p9_bis, which = "McFaddenAdj")
+R4<-PseudoR2(p_final, which = "McFaddenAdj")
+
+rall<-c(R0,R1,R2,R3,R4)
+names(rall)<-c("1","2","3","4","5")
+kable_styling(kable(rall,digits = 3,booktabs=T,caption = "MacFadden R-squared adjusted for the 5 last models"),
+              position = "center",latex_options = "HOLD_position",
+              bootstrap_options=c("stripped","hover","condensed"),
+              )
+
+```
+
+For the last 5 models, the MacFadden R-squared ajusted are very similar, the best though is the last model's one.
+When you take $hstatusg$ out, $age$ becomes insignificant. Our final probit model with variables interacting is then :
+
+  * $probit(ins_i) = \alpha+\beta _1hisp_i + \beta _2educyear_i + \beta _3married_i + \beta _4chronic_i + \beta _5adl_i + \beta _6retir_i  + \beta _7logincome_i + \beta _8 (logincome_i*married_i)+\beta _9(logincome_i*hisp_i)+\mu _i$
+  
+Same model than the logit model, quite logical in fact. The probit model though gives some better results than its logit counterpart ($AIC_{probit}<AIC_{logit}$).
+
+
+
+
+\newpage
+
+# Model comparison
+
+We will use the best model without variables in interaction and the best model with variables in interaction and compare them with the probit and the logit estimations.
+
+```{r,results='asis'}
+stargazer(glm8,glm_final,p8,p_final,type="latex",title="Models",table.placement="H")
+```
+
+The models with some variables in interaction are the best models.
+The best models are definitely the two with variables in interaction.
+
+\newpage
+
+# Hypothesis and specifications tests
+
+We want to check both models to see if the coefficients are individually significant, simultaneously significant. We might take a look at the extreme observations, high-leverage points... 
+
+Wald tests are used to check if coefficients are individually significant, they are implicitly made within the estimation of the coefficients of our models. As in linear regression, the stars show the significance level of each coefficient.
+
+
+We will check for both models the simultaneous significance of the coefficients by applying an ANOVA test comparing our models with a model without any coefficients.
+
+## Logit
+
+*ANOVA test*
+```{r}
+fit_null = glm(ins~ 1, family = "binomial", data=df)
+summary(fit_null)
+anova(fit_null,glm_final,test="Chisq")
+1 - pchisq(glm_final$null.deviance - glm_final$deviance , glm_final$rank-1)
+
+```
+
+We can reject the simultaneous nullity of the exogenous variable coefficients (at the 5% level). 
+
+*Extreme observations and high-leverage points*
+
+```{r}
+
+influenceIndexPlot(glm_final)
+
+inf<-influencePlot(glm_final)
+
+kable_styling(kable(inf,digits = 2,booktabs=T,caption = "Extreme observations"),
+              position = "center",latex_options = "HOLD_position",
+              bootstrap_options=c("stripped","hover","condensed"),
+              )
+dflog<-df[-c(20,217,3012,3112),]
+glm_final_2<-update(glm_final,data=dflog)
+k<-compareCoefs(glm_final,glm_final_2)
+
+```
+
+We took these observations out. The coefficients have changed a bit.
+
+Let's run a Hosmer-Lemeshow goodness of fit test to see if our model is correctly specified.
+
+  * Test statistic: $HL = \sum_{g=1}^{G} \frac{(P_g-Y_g)^2}{Y_g(1-Y_g)}$ 
+
+Hosmer-Lemeshow goodness of fit test
+
+```{r}
+hoslem.test(glm_final_2$data$ins, fitted(glm_final_2))
+```
+
+The p-value is inferior to 0.01, it strenghens the belief that our model is of good fit. 
+
+```{r}
+summary(glm_final_2)
+```
+
+Our final model for the logit estimation gives a much better AIC and log-likelihood.
+
+## Probit
+
+```{r}
+fit_null = glm(ins~ 1, family = "binomial", data=df)
+summary(fit_null)
+anova(fit_null,p_final,test="Chisq")
+1 - pchisq(p_final$null.deviance - p_final$deviance , p_final$rank-1)
+```
+
+
+```{r}
+influenceIndexPlot(p_final)
+inf<-influencePlot(p_final)
+kable_styling(kable(inf,digits = 2,caption = "Extreme observations",booktabs=T),
+              position = "center",latex_options = "HOLD_position",
+              bootstrap_options=c("stripped","hover","condensed"),
+              )
+dfprob<-df[-c(12,20,217,3012,3112),]
+p_final_2<-update(p_final,data=dfprob)
+k<-compareCoefs(p_final, p_final_2)
+
+```
+
+
+```{r}
+hoslem.test(p_final_2$data$ins, fitted(p_final_2))
+```
+
+The p-value is inferior to 0.01, it strenghens the belief that our model is of good fit.
+
+```{r}
+summary(p_final_2)
+```
+
+Same as the logit estimation, this final model gives a better AIC and log-likelihood.
+
+\newpage
+
+# Robustness and prediction
+
+We are going to test the robustness of our models by generating 500 bootstrap samples and testing our latent model on them.
+
+## Logit
+
+
+```{r}
+# Analysis Robustness of results; Bootstrap
+R = 500                     # number of bootstrap samples
+n = nrow(dflog)              # sample size
+k = length(coef(glm_final_2))     # number of coefficients
+
+# set up a empty Rxn matrix B
+B = matrix(nrow = R, ncol = k,
+           dimnames = list(paste("Sample",1:R), 
+                           names(coef(glm_final_2))))
+# loop R times
+set.seed(111)
+for(i in 1:R){
+  # sample credit data with replacement
+  boot.dflog = dflog[sample(x = 1:n, size = n, replace = TRUE), ]
+  # fit the model on the boostrapped sample
+  boot.logit = glm(ins~ hisp +married+ educyear + chronic + adl + retire + log_income+log_income*married+log_income*hisp, 
+                   data=boot.dflog, family = binomial(link = "logit"))
+  # store the coefficients
+  B[i,] = coef(boot.logit)
+}
+kable_styling(kable(confint(glm_final_2),digits = 2,caption = "Confidence intervals",booktabs=T),
+              position = "center",latex_options = "HOLD_position",
+              bootstrap_options=c("stripped","hover","condensed"),
+              )
+```
+
+For the logit estimation for 95% of the samples the coefficients vary around the originally estimated coefficients and they never change signs, which means that our model is quite stable. 
+```{r}
+xx <- B[,1]
+par(mfrow=c(3,4),mar=c(1.5,1.5,1.5,1.5))
+# show Bootsprap parameter by each univariate distrution
+h<-hist(xx, breaks=10, col="red", xlab="Intercept") 
+xfit<-seq(min(xx),max(xx),length=40) 
+yfit<-dnorm(xfit,mean=mean(xx),sd=sd(xx)) 
+yfit <- yfit*diff(h$mids[1:2])*length(xx) 
+lines(xfit, yfit, col="blue", lwd=2)
+
+xx <- B[,2]
+
+h1<-hist(xx, breaks=10, col="red", xlab="Intercept") 
+xfit<-seq(min(xx),max(xx),length=40) 
+yfit<-dnorm(xfit,mean=mean(xx),sd=sd(xx)) 
+yfit <- yfit*diff(h1$mids[1:2])*length(xx) 
+lines(xfit, yfit, col="blue", lwd=2)
+
+xx<- B[,3]
+
+h2<-hist(xx, breaks=10, col="red", xlab="Intercept") 
+xfit<-seq(min(xx),max(xx),length=40) 
+yfit<-dnorm(xfit,mean=mean(xx),sd=sd(xx)) 
+yfit <- yfit*diff(h2$mids[1:2])*length(xx) 
+lines(xfit, yfit, col="blue", lwd=2)
+
+xx<- B[,4]
+
+h3<-hist(xx, breaks=10, col="red", xlab="Intercept") 
+xfit<-seq(min(xx),max(xx),length=40) 
+yfit<-dnorm(xfit,mean=mean(xx),sd=sd(xx)) 
+yfit <- yfit*diff(h3$mids[1:2])*length(xx) 
+lines(xfit, yfit, col="blue", lwd=2)
+
+xx <- B[,5]
+
+h4<-hist(xx, breaks=10, col="red", xlab="Intercept") 
+xfit<-seq(min(xx),max(xx),length=40) 
+yfit<-dnorm(xfit,mean=mean(xx),sd=sd(xx)) 
+yfit <- yfit*diff(h4$mids[1:2])*length(xx) 
+lines(xfit, yfit, col="blue", lwd=2)
+
+xx <- B[,6]
+
+h5<-hist(xx, breaks=10, col="red", xlab="Intercept") 
+xfit<-seq(min(xx),max(xx),length=40) 
+yfit<-dnorm(xfit,mean=mean(xx),sd=sd(xx)) 
+yfit <- yfit*diff(h5$mids[1:2])*length(xx) 
+lines(xfit, yfit, col="blue", lwd=2)
+
+xx <- B[,7]
+
+h6<-hist(xx, breaks=10, col="red", xlab="Intercept") 
+xfit<-seq(min(xx),max(xx),length=40) 
+yfit<-dnorm(xfit,mean=mean(xx),sd=sd(xx)) 
+yfit <- yfit*diff(h6$mids[1:2])*length(xx) 
+lines(xfit, yfit, col="blue", lwd=2)
+
+xx <- B[,8]
+
+h7<-hist(xx, breaks=10, col="red", xlab="Intercept") 
+xfit<-seq(min(xx),max(xx),length=40) 
+yfit<-dnorm(xfit,mean=mean(xx),sd=sd(xx)) 
+yfit <- yfit*diff(h7$mids[1:2])*length(xx) 
+lines(xfit, yfit, col="blue", lwd=2)
+
+xx <- B[,9]
+
+h8<-hist(xx, breaks=10, col="red", xlab="Intercept") 
+xfit<-seq(min(xx),max(xx),length=40) 
+yfit<-dnorm(xfit,mean=mean(xx),sd=sd(xx)) 
+yfit <- yfit*diff(h8$mids[1:2])*length(xx) 
+lines(xfit, yfit, col="blue", lwd=2)
+
+xx <- B[,10]
+
+h9<-hist(xx, breaks=10, col="red", xlab="Intercept") 
+xfit<-seq(min(xx),max(xx),length=40) 
+yfit<-dnorm(xfit,mean=mean(xx),sd=sd(xx)) 
+yfit <- yfit*diff(h9$mids[1:2])*length(xx) 
+lines(xfit, yfit, col="blue", lwd=2)
+
+
+
+
+```
+
+
+
+
+
+## Probit
+
+
+
+```{r}
+# Analysis Robustness of results; Bootstrap
+R = 500                     # number of bootstrap samples
+n = nrow(dfprob)              # sample size
+k = length(coef(p_final_2))     # number of coefficients
+
+# set up a empty Rxn matrix B
+B = matrix(nrow = R, ncol = k,
+           dimnames = list(paste("Sample",1:R), 
+                           names(coef(p_final_2))))
+# loop R times
+set.seed(111)
+for(i in 1:R){
+  # sample credit data with replacement
+  boot.dfprob = dfprob[sample(x = 1:n, size = n, replace = TRUE), ]
+  # fit the model on the boostrapped sample
+  boot.probit = glm(ins~ hisp +married+ educyear + chronic + adl + retire + log_income+log_income*married+log_income*hisp, 
+                   data=boot.dfprob, family = binomial(link = "probit"))
+  # store the coefficients
+  B[i,] = coef(boot.probit)
+}
+kable_styling(kable(confint(p_final_2),digits = 2,caption = "Confidence intervals",booktabs=T),
+              position = "center",latex_options = "HOLD_position",
+              bootstrap_options=c("stripped","hover","condensed"),
+              )
+```
+
+For the probit estimation for 95% of the samples the coefficients vary around the originally estimated coefficients and they never change signs, which means that our model is quite stable. 
+
+```{r}
+xx <- B[,1]
+par(mfrow=c(3,4),mar=c(1.5,1.5,1.5,1.5))
+# show Bootsprap parameter by each univariate distrution
+h<-hist(xx, breaks=10, col="red", xlab="Intercept") 
+xfit<-seq(min(xx),max(xx),length=40) 
+yfit<-dnorm(xfit,mean=mean(xx),sd=sd(xx)) 
+yfit <- yfit*diff(h$mids[1:2])*length(xx) 
+lines(xfit, yfit, col="blue", lwd=2)
+
+xx <- B[,2]
+
+h1<-hist(xx, breaks=10, col="red", xlab="Intercept") 
+xfit<-seq(min(xx),max(xx),length=40) 
+yfit<-dnorm(xfit,mean=mean(xx),sd=sd(xx)) 
+yfit <- yfit*diff(h1$mids[1:2])*length(xx) 
+lines(xfit, yfit, col="blue", lwd=2)
+
+xx<- B[,3]
+
+h2<-hist(xx, breaks=10, col="red", xlab="Intercept") 
+xfit<-seq(min(xx),max(xx),length=40) 
+yfit<-dnorm(xfit,mean=mean(xx),sd=sd(xx)) 
+yfit <- yfit*diff(h2$mids[1:2])*length(xx) 
+lines(xfit, yfit, col="blue", lwd=2)
+
+xx<- B[,4]
+
+h3<-hist(xx, breaks=10, col="red", xlab="Intercept") 
+xfit<-seq(min(xx),max(xx),length=40) 
+yfit<-dnorm(xfit,mean=mean(xx),sd=sd(xx)) 
+yfit <- yfit*diff(h3$mids[1:2])*length(xx) 
+lines(xfit, yfit, col="blue", lwd=2)
+
+xx <- B[,5]
+
+h4<-hist(xx, breaks=10, col="red", xlab="Intercept") 
+xfit<-seq(min(xx),max(xx),length=40) 
+yfit<-dnorm(xfit,mean=mean(xx),sd=sd(xx)) 
+yfit <- yfit*diff(h4$mids[1:2])*length(xx) 
+lines(xfit, yfit, col="blue", lwd=2)
+
+xx <- B[,6]
+
+h5<-hist(xx, breaks=10, col="red", xlab="Intercept") 
+xfit<-seq(min(xx),max(xx),length=40) 
+yfit<-dnorm(xfit,mean=mean(xx),sd=sd(xx)) 
+yfit <- yfit*diff(h5$mids[1:2])*length(xx) 
+lines(xfit, yfit, col="blue", lwd=2)
+
+xx <- B[,7]
+
+h6<-hist(xx, breaks=10, col="red", xlab="Intercept") 
+xfit<-seq(min(xx),max(xx),length=40) 
+yfit<-dnorm(xfit,mean=mean(xx),sd=sd(xx)) 
+yfit <- yfit*diff(h6$mids[1:2])*length(xx) 
+lines(xfit, yfit, col="blue", lwd=2)
+
+xx <- B[,8]
+
+h7<-hist(xx, breaks=10, col="red", xlab="Intercept") 
+xfit<-seq(min(xx),max(xx),length=40) 
+yfit<-dnorm(xfit,mean=mean(xx),sd=sd(xx)) 
+yfit <- yfit*diff(h7$mids[1:2])*length(xx) 
+lines(xfit, yfit, col="blue", lwd=2)
+
+xx <- B[,9]
+
+h8<-hist(xx, breaks=10, col="red", xlab="Intercept") 
+xfit<-seq(min(xx),max(xx),length=40) 
+yfit<-dnorm(xfit,mean=mean(xx),sd=sd(xx)) 
+yfit <- yfit*diff(h8$mids[1:2])*length(xx) 
+lines(xfit, yfit, col="blue", lwd=2)
+
+xx <- B[,10]
+
+h9<-hist(xx, breaks=10, col="red", xlab="Intercept") 
+xfit<-seq(min(xx),max(xx),length=40) 
+yfit<-dnorm(xfit,mean=mean(xx),sd=sd(xx)) 
+yfit <- yfit*diff(h9$mids[1:2])*length(xx) 
+lines(xfit, yfit, col="blue", lwd=2)
+
+
+```
+
+
+
+## Predictions
+
+We will take a look at the confusion matrices to see the quality of the prediction at a threshold value equal to 0.5 .
+
+```{r}
+predlog<-table(true = dflog$ins, pred = round(fitted(glm_final_2)))
+predprob<-table(true = dfprob$ins, pred = round(fitted(p_final_2)))  
+errorlog<-round((predlog[1,2]+predlog[2,1])/3202,4)*100
+errorprob<-round((predprob[1,2]+predprob[2,1])/3201,4)*100
+         
+add_header_above(kable_styling(kable(addmargins(predlog),digits=3,caption = "Confusion matrix : Logit",booktabs=T),
+              position = "center",latex_options = "HOLD_position",
+              bootstrap_options=c("stripped","hover","condensed"),
+              ),c("Reality","Prediction"=3))
+predlog.prop <- round(prop.table(predlog, margin = 1)*100, 1)
+add_header_above(kable_styling(kable(predlog.prop,digits=3,caption = "Confusion matrix, proportions : Logit",booktabs=T),
+              position = "center",latex_options = "HOLD_position",
+              bootstrap_options=c("stripped","hover","condensed"),
+              ),c("Reality","Prediction"=2))
+
+```
+
+The uninsured group is quite well (specificity: 80.8%) predicted with only 19.2% predicted as insured. For the insured though, the prediction isn't as good; only 38.3% (sensitivity) is correctly predicted. We may have an issue with the size of the group, as twice as small as the not insured group. The global error stands at 35.63% which isn't that good, but not that bad either.
+
+```{r}
+pred1 <- prediction(predict(glm_final_2),dflog$ins)
+perf1 <- performance(pred1,"tpr","fpr")
+plot(perf1,main="ROC Curve", col="red",lwd=5)
+abline(0,1)
+```
+
+```{r}
+add_header_above(kable_styling(kable(addmargins(predprob),digits=3,caption = "Confusion matrix : Probit",booktabs=T),
+              position = "center",latex_options = "HOLD_position",
+              bootstrap_options=c("stripped","hover","condensed"),
+              ),c("Reality","Prediction"=3))
+predprob.prop <- round(prop.table(predprob, margin = 1)*100, 1)
+add_header_above(kable_styling(kable(predprob.prop,digits=3,caption = "Confusion matrix, proportions : Probit",booktabs=T),
+              position = "center",latex_options = "HOLD_position",
+              bootstrap_options=c("stripped","hover","condensed"),
+              ),c("Reality","Prediction"=2))
+```
+
+The uninsured group is quite well predicted (specificity: 81.2%) with only 18.8% predicted as insured. For the insured though, the prediction isn't as good; only 37.8% is rightly predicted. The global error stands at 35.61% which isn't that good, but not that bad either. It's nearly the same prediction as the logit estimation, the uninsured are slightly more accuratly predicted and the insured are slightly less accuratly predicted. The overall prediction is slightly better with the probit estimation.
+
+```{r}
+pred1 <- prediction(predict(p_final_2),dfprob$ins)
+perf1 <- performance(pred1,"tpr","fpr")
+plot(perf1,main="ROC Curve", col="red",lwd=5)
+
+abline(0,1)
+```
+
+## Improving the prediction
+
+We can play with the decision probability c (if p predicted > c then we categorize the individual as insured) and lets try to maximize that area under the curv ROC.
+
+```{r}
+log_predict <- predict(glm_final_2,newdata = dflog,type = "response")
+log_predict <- ifelse(log_predict > 0.5,1,0)
+pred1 <- prediction(log_predict,dflog$ins)
+perf1 <- performance(pred1,"tpr","fpr")
+par(mfrow=c(2,2))
+auc(dflog$ins,log_predict)
+```
+The area under the curv ROC with c=0.5 is 0.595.
+
+```{r}
+log_predict <- predict(glm_final_2,newdata = dflog,type = "response")
+log_predict <- ifelse(log_predict > 0.4,1,0)
+
+pr <- prediction(log_predict,dflog$ins)
+perf <- performance(pr,measure = "tpr",x.measure = "fpr")
+plot(perf)
+auc(dflog$ins,log_predict)
+```
+The area under the curv is now 0.652.
+Let's build the new confusion matrix.
+
+```{r}
+
+predict <- predict(glm_final_2, type = 'response')
+
+add_header_above(kable_styling(kable(table(dflog$ins, predict > 0.4),caption = "New confusion matrix",booktabs=T),
+              position = "center",latex_options = "HOLD_position",
+              bootstrap_options=c("stripped","hover","condensed"),
+              ),c("Reality","Prediction"=2))
+add_header_above(kable_styling(kable(prop.table(table(dflog$ins, predict > 0.4),margin = 1)*100,digits = 2,caption = "New confusion matrix",booktabs=T),
+              position = "center",latex_options = "HOLD_position",
+              bootstrap_options=c("stripped","hover","condensed"),
+              ),c("Reality","Prediction"=2))
+#ROC curve
+pred1 <- prediction(predict(glm_final_2),dflog$ins )
+perf1 <- performance(pred1,"tpr","fpr")
+plot(perf1,main="ROC Curve", col="red",lwd=5)
+abline(0,1)
+```
+The global error is a bit better, we predict a lot more insured individuals but far less not insured.
+We can work with the categorizing probability to try to improve our predictions.
+
+
+\newpage
+
+# Odd ratios, z-values and average marginal effects
+
+As the model contains variables in interaction, both in the logit and probit model, we have to be careful with how we interpret some results.
+Marginal effects can't be interpreted for variables in interaction in non-linear models it makes no-sense.
+
+## Logit
+
+
+```{r}
+odd_ratio<-exp(glm_final_2$coefficients[-c(9,10)])
+
+kable_styling(kable(odd_ratio,digits=3,caption = "Odd ratios : Logit",booktabs=T),
+              position = "center",latex_options = "HOLD_position",
+              bootstrap_options=c("stripped","hover","condensed"),
+              )
+
+Logit1Scalar <- mean(dlogis(predict(glm_final_2, type = "link")))
+
+kable_styling(kable(Logit1Scalar * glm_final_2$coefficients[-c(9,10)],digits = 3,caption = "Average marginal effects : Logit",booktabs=T),
+              position = "center",latex_options = "HOLD_position",
+              bootstrap_options=c("stripped","hover","condensed"),
+              )
+
+
+plogit<- predict(glm_final_2, type="response")
+
+
+```
+
+* If the individual isn't married and isn't hispanic, if the logincome goes up by one it increases the chances of being insured by 25%. 
+
+* If the number of years spent in school goes up by one, it increases the chances of being insured by 1.5%
+
+* If intensity of the chronic disease goes up by one, it increases the chances of being insured by 1.4%%
+
+* If number of restricted activities goes up by one, it diminishes the chances of being insured by 3.4%
+
+* If the individual is retired, it increases the chances of being insured by 3.8%
+
+**Predicted probabilities**
+
+```{r}
+summary(plogit)
+```
+
+50% of the individuals of this database are predicted to have a probability of being insured over 40%.
+
+## Probit
+
+```{r}
+kable_styling(kable(p_final_2$coefficients[-c(9,10)],digits = 3,caption = "Z-score increase : Probit",booktabs=T),
+              position = "center",latex_options = "HOLD_position",
+              bootstrap_options=c("stripped","hover","condensed"),
+              )
+ProbitScalar <- mean(dnorm(predict(p_final_2, type = "link")))
+kable_styling(kable(ProbitScalar * glm_final_2$coefficients[-c(9,10)],digits = 3,caption = "Average marginal effects : Probit",booktabs=T),
+              position = "center",latex_options = "HOLD_position",
+              bootstrap_options=c("stripped","hover","condensed"),
+              )
+
+pprobit<- predict(p_final_2, type="response")
+
+```
+
+* If the individual isn't married and isn't hispanic, if the logincome goes up by one it increases the chances of being insured by 29.3%. 
+
+* If the number of years spent in school goes up by one, it increases the chances of being insured by 2.4%
+
+* If intensity of the chronic disease goes up by one, it increases the chances of being insured by 2.2%%
+
+* If number of restricted activities goes up by one, it diminishes the chances of being insured by 5.5%
+
+* If the individual is retired, it increases the chances of being insured by 6.1%
+
+**Predicted probabilities**
+
+```{r}
+summary(pprobit)
+```
+
+50% of the individuals of this database are predicted to have a probability of being insured over 40%.
+
+
+
+\newpage
+
+# Interpretation
+
+## Logit
+
+As we have two interactions within these models, one continuous variable interacting
+with two discrete variables, we have two models that can be written in four expressions.
+
+### Variables in interaction
+
+When you have an $hisp$=0 and $married$=0, $hisp$=0 and $married$=1, $hisp$=1 and $married$=0, $hisp$=1 and $married$=1:
+	
+* $logit(ins_i) = \alpha+ \beta _2educyear_i + \beta _4chronic_i+\beta _5adl_i + \beta _6retir_i  + \beta _7logincome_i +\mu _i$
+	
+* $logit(ins_i) = \alpha+\beta _1hisp_i + \beta _2educyear_i +\beta _4chronic_i + \beta _5adl_i + \beta _6retir_i (\beta _7+\beta _9)(logincome_i)+\mu _i$
+
+* $logit(ins_i) = \alpha+ \beta _2educyear_i + \beta _3married_i+\beta _4chronic_i + \beta _5adl_i + \beta _6retir_i+(\beta _7+\beta _8) (logincome_i)+\mu _i$
+
+* $logit(ins_i) = \alpha+\beta _1hisp_i + \beta _2educyear_i +\beta _3married_i + \beta _4chronic_i + \beta _5adl_i + \beta _6retir_i+(\beta _7 + \beta _8 +\beta _9)(logincome_i)+\mu _i$
+
+Now we can map the logistic regression output to these two equations. So we can say that the coefficient for logincome is the effect of $logincome$ when $hisp$ = 0 and $married$ = 0. More explicitly, we can say that for single non-hispanics, a one-unit increase in logincome score yields a change in log odds of 0.862.  For a single hispanic, a one-unit increase in logincome yields a change in log odds of $(0.862 + 1.564) = 2.426.$  
+In terms of odds ratios, we can say that for single non-hispanics, the odds ratio is $exp(0.862)  = 2.368$ for a one-unit increase in $logincome$ and the odds ratio for single hispanics is $exp(2.426) = 11.314$ for a one-unit increase in logincome.  The ratio of these two odds ratios (single hispanic over single non-hispanic) turns out to be the exponentiated coefficient for the interaction term of single hispanic by $logincome$: $11.314/2.426 = exp(1.564) = 4.7.$ 
+
+Same process for married non-hispanics, a one-unit increase in logincome yields a 
+change in log odds of (0.862 - 0.330 ) = 0.532. The odds ratio for married non-hispanics is exp(0.532) = 1.702 for a one-unit 
+increase in logincome.  The ratio of these two odds ratios (maried non-hispanic over single non-hispanic) turns out to be the 
+exponentiated coefficient for the interaction term of married non-hispanics by $logincome$: 1.702/2.426  = exp(-0.330) = 0.71.
+
+At last, for married hispanics, a one-unit increase in logincome yields a change in log odds of (0.862 - 0.330 + 1.564) = 2.096. The odds ratio for married hispanics is exp(2.096) = 8.134 for a one-unit increase in logincome.  The ratio of these two odds ratios (maried hispanic over single non-hispanic) turns out to be the exponentiated coefficient for the interaction term of married hispanics by $logincome$: 8.134/2.426  =exp(-0.330+1.564) = 3.40. 
+
+### Other variables
+
+  * This fitted model says that, holding all other exogenous variables at a fixed value, the odds of being insured for retired individuals (retire = 1)over the odds of being insured for not-retired individuals (retire = 0) is exp(0.180) = 1.198.  In terms of percent change, we can say that the odds for retired are 19.8% higher than the odds for working individuals.  
+
+  * we will see 6.8% increase in the odds of being insured for a one-degree increase in intensity of a chronic disease since exp(0.066) = 1.068.
+
+  *  we will see 15% decrease in the odds of being insured for a one restriction added in adl since exp(-0.163) = 0.850.
+
+  * we will see 7.3% increase in the odds of being insured for one more year of studying since exp(0.071) = 1.073.
+
+
+
+## Probit
+
+The probit estimation coefficients are a bit more complicated to interpret. We say that the coefficients represent for a one-unit increase the change in the z-score. Again we have to be careful with the variables in interaction.
+
+### Variables in interaction
+
+We won't write the equations again but they are the same as the logit model.
+```{r}
+(0.529 - 0.201 + 0.839)
+```
+
+ So we can say that the coefficient for logincome is the effect of $logincome$ when $hisp$ = 0 and $married$ = 0. More explicitly, we can say that for $single non-hispanics$, a one-unit increase in logincome yields an increase in z-score of 0.529.  For a $single hispanic$, a one-unit increase in logincome yields an increase in z-score of $(0.529 + 0.839) =  1.368.$  
+
+Same process for married non-hispanics, a one-unit increase in logincome yields an increase in z-score of (0.529-0.201 ) = 0.328. 
+
+At last, for married hispanics, a one-unit increase in logincome increases the z-score of (0.529 - 0.201 + 0.839) = 1.167.
+
+### Other variables
+
+* This fitted model says that, holding all other exogenous variables at a fixed value, the z-score for retired individuals (retire = 1)over the z-score for not-retired individuals (retire = 0) increases by 0.107.  
+
+  * for a one added degree of intensity of the chronic disease the z-score increases by 0.040
+
+  * for one more restriction on activities the z-score decreases by 0.098
+
+  * for one more year of studying the z-score increases by 0.044.
+
+## Conclusion
+
+The probability of being insured, not suprisingly, relies heavily on the household income, as the income goes up, the probability of being insured goes up too. Many other variables interact with the household income: being married probably increases the household income as the spouse potentially adds another source of revenue, being hispanic may be related to lower incomes and so the overcompensated coefficient may mean that for the same income as non- hispanics the probability of being insured may be the same.
+
+Having a more intense chronic disease slightly increases your chances of being insured too. It sounds quite logical as a chronic disease happens to be a source of expenses in medical bills, foreseeable expenses. 
+
+I don't really know how to interpret how the restrictions on daily activities have a negative impact on the probability of being insured or not. Maybe restrictions on daily activities prevent you for getting an insurance, or maybe they are in related to a lower wage as seen in the correlation matrices.
+
+The positive impact of a higher education level on the probability of being insured isn't surprinsing at all. Firstly, the number of years of education are strongly correlated with a higher income. Then, it may have an impact on the knowledge of the perks of being insured versus not being insured.
+
+And now the last variable, $retire$. Being retired have a positive impact on the probability on being insured. It may be correlated to the fact that retired individuals may think about the increasing risk of having some upcoming heavy medical bills to pay, as getting older means having a bigger chance to fall seriously ill.
+
+\newpage
+
+# Discusion and limitations
+
+## The data
+
+  * In my opinion, this database doesn't provide sufficient information to predict accuratly the probability for an individual to be insured with a private company. Firstly, I am not sure that someone would insure himself when he is sick, and by that I mean that insurance is useful only to a healthy person as a prevention in case he becomes sick and then has to pay some medical bills that might be covered by his insurance. So all the variables on the health status are insignificant. Insurance is a long term investment, in this case on your health and your financial ability to pay for healthcare. This database lacks of temporality.
+Let's say we would be able to get some additionnal data to improve our model and predictions, I would search for the number of health incidents that have occured during the lifetime of the individual. Or having an estimation on the amount payed in medical bills in the last 5 years...
+
+  * Also, let's talk about the household income which doesn't really give enough information about the individual. Obviously it has a great positive impact on the probability of being insured, but, it lacks details like individual income, number of children... 
+
+
+
+  * I would also add some information about how much money does the insured spend on insurance, we could then create some measures with the income like the percentage of the income spent on insurance...
+
+  * Sample size: Both probit and logit models require more cases than OLS regression because they use maximum likelihood estimation techniques. It is sometimes possible to estimate models for binary outcomes in datasets with only a small number of cases using exact logistic regression. It is also important to keep in mind that when the outcome is rare, even if the overall dataset is large, it can be difficult to estimate a probit model. In our case the data wasn't balanced, but, it wasn't too unbalanced. It may have caused a little biase but not that much.  
+
+## Pros and cons of the logistic regression
+
+Like any method, it has its pros and cons. Perhaps the biggest pro is that the gradient and Hessian,  which are typically used for optimization, are functions of the logit probabilities themselves, so require no additional computation. Most variables are very easy to interpret in the end even though odds ratios aren't the easiest concept to communicate. We can communicate in terms of predicted probabilities, average marginal effect which all have a direct interpretation quite easy to understand.
+
+Now onto the cons. First, it was very hard to use variables in interaction. Even if it made sense in to use them and it improved the overall performance I don't really know if I am allowed to use variables in interaction in that non-linear model.
+
+Then the binary (black or white - no grey) nature of logistic regression.
+
+Suppose you are monitoring sales. If the person buys, a 1 is scored - if no sale, a 0 is scored. That does not tell you that the person did buy the article but not from you. All the near misses are 0 - all the total failures are 0.
+
+A similar example is a rugby national team wining the world cup. The winner is awarded 1, the losing finalist 0. All the other tournament competitors get 0. But the losing finalist is a far better team( a 0.9 say) than a team knocked out in the first round - but they both score 0. You could do an LR on just the 2 finalists in every world cup but then you would be losing all the information from the majority of teams in the tournament who did not reach the finals but may have won or lost rounds or even got to the quarter or semi-finals.
+
+The values of 0 (fail) and 1 (success) are arbitrary. The important part (that tends to get lost) is not to predict the numerical value of Y, but the probability that success or failure occurs, and the extent to which that probability depends on the predictor variables. If you throw out or corrupt most of the potential informatory data how can you be sure you have the right probabilities of success or failure?
+
+When we come back at our problematic, we can ask ourselves, is the person predicted as insured has a full insurance? for how many years has he been insured? Will he stay insured? There is no grey, just black or white. 
+
+And finally one of the biggest problem is that logit (and probit) all have very specific tail assumptions. That is, extreme cases are presumed to become progressively rare at a very specific rate. While this isn’t so severe where you have a lot of data, by definition the tails are where data are quite rare, so you often will have the most of your function, where you want to make accurate predictions for most data, influenced strongly by a bit of data in the tails. We should be very careful in extrapolating probabilities from the logit model, or any model that makes these predictions only on functional form assumptions.
+  
